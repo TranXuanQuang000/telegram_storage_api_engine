@@ -54,7 +54,7 @@ export function ReaderClient({
   const [chapterList, setChapterList] = useState(false);
   const [chapterFilter, setChapterFilter] = useState("");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [gap, setGap] = useState<"none" | "soft" | "wide">("soft");
+  const [gap, setGap] = useState<"none" | "soft" | "wide">("none");
   const [download, setDownload] = useState<"idle" | "working" | "done" | "error">("idle");
   const pageRefs = useRef<Array<HTMLElement | null>>([]);
   const lastSavedPage = useRef(-1);

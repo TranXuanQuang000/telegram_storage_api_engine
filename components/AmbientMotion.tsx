@@ -131,6 +131,15 @@ export function AmbientMotion() {
         <div className="ambient-motion__aurora" />
         <div className="ambient-motion__stars" />
         <div className="ambient-motion__scan" />
+        <div className="ambient-motion__orbital-field">
+          <div className="ambient-motion__orbit-rings"><i /><i /><i /><i /></div>
+          <div className="ambient-motion__orbit-core"><i /></div>
+          <div className="ambient-motion__holo-cards">
+            {Array.from({ length: 5 }, (_, index) => (
+              <span key={index}><i /><i /><i /></span>
+            ))}
+          </div>
+        </div>
         <div className="ambient-motion__reticle"><i /><i /><i /></div>
         <div className="ambient-motion__streams">
           {Array.from({ length: 7 }, (_, index) => <i key={index} />)}
