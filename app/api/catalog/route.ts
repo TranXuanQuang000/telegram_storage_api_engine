@@ -1,5 +1,7 @@
+import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { getFilteredDiscoverCatalog } from "../../../lib/catalog";
+import { getD1DiscoverCatalog } from "../../../lib/d1-catalog";
 
 export async function GET(request: NextRequest) {
   const query = (request.nextUrl.searchParams.get("q") ?? "").slice(0, 120);
@@ -15,7 +17,7 @@ export async function GET(request: NextRequest) {
   const sort = request.nextUrl.searchParams.get("sort") ?? "latest";
   const pageSize = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 24, 1), 48);
   const scanPages = Math.min(Math.max(Number(request.nextUrl.searchParams.get("scanPages")) || 12, 1), 16);
-  const catalog = await getFilteredDiscoverCatalog({
+  const filters = {
     query,
     page,
     pageSize,
@@ -29,7 +31,12 @@ export async function GET(request: NextRequest) {
     maxChapters,
     sort,
     scanPages,
-  });
+  };
+  const runtime = env as unknown as { DB?: D1Database };
+  const indexedCatalog = runtime.DB
+    ? await getD1DiscoverCatalog(runtime.DB, filters).catch(() => null)
+    : null;
+  const catalog = indexedCatalog ?? await getFilteredDiscoverCatalog(filters);
   return NextResponse.json({
     items: catalog.stories,
     page: catalog.page,

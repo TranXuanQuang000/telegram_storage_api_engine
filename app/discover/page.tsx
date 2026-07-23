@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Sparkles } from "lucide-react";
@@ -5,6 +6,7 @@ import { DiscoverFilters } from "../../components/DiscoverFilters";
 import { SiteHeader } from "../../components/SiteHeader";
 import { StoryCard } from "../../components/StoryCard";
 import { getFilteredDiscoverCatalog } from "../../lib/catalog";
+import { getD1DiscoverCatalog } from "../../lib/d1-catalog";
 
 export const metadata: Metadata = { title: "Khám phá", description: "Tìm truyện theo tên, thể loại, mood, trạng thái và nguồn." };
 
@@ -22,7 +24,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
   const minScore = typeof params.minScore === "string" ? Number(params.minScore) : 0;
   const maxChapters = typeof params.maxChapters === "string" ? Number(params.maxChapters) : 0;
   const sort = typeof params.sort === "string" ? params.sort : "latest";
-  const catalog = await getFilteredDiscoverCatalog({
+  const filters = {
     query,
     page,
     include,
@@ -34,7 +36,12 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
     minScore,
     maxChapters,
     sort,
-  });
+  };
+  const runtime = env as unknown as { DB?: D1Database };
+  const indexedCatalog = runtime.DB
+    ? await getD1DiscoverCatalog(runtime.DB, filters).catch(() => null)
+    : null;
+  const catalog = indexedCatalog ?? await getFilteredDiscoverCatalog(filters);
 
   function pageHref(nextPage: number) {
     const next = new URLSearchParams();

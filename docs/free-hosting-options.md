@@ -57,7 +57,7 @@ Tài liệu chính thức:
 2. Thêm đăng nhập, `user_id` và policy/kiểm tra quyền trên mọi API tủ truyện.
 3. Khi người dùng đăng nhập lần đầu, hỏi họ có muốn nhập tủ truyện/lịch sử từ thiết bị vào database hay không.
 4. Thêm index SQL cho `stories(updated_at)`, `ratings(score)`, `story_genres(genre_slug, story_id)` và `reading_progress(user_id, updated_at)`.
-5. Cron nạp dần toàn bộ catalog; request tìm kiếm chỉ truy vấn D1, tuyệt đối không lọc riêng từng trang upstream.
+5. Cron theo giờ nạp tiếp sáu trang từ cursor gần nhất cho đến khi phủ toàn bộ catalog, sau đó quay lại trang đầu để refresh. Request tìm kiếm ưu tiên D1 và luôn lọc/sắp xếp trước `LIMIT/OFFSET`; trong lúc D1 chưa đủ dữ liệu, hệ thống dùng chỉ mục hợp nhất nhiều trang làm dự phòng.
 6. Chỉ thêm R2 khi cần lưu avatar/tài sản do người dùng tạo; không sao chép ảnh chương truyện lên hạ tầng riêng.
 
 Với quy mô ít người, Cloudflare D1 là lựa chọn phù hợp nhất cho code hiện tại. Supabase là lựa chọn thay thế tốt nếu Auth/RLS và dashboard PostgreSQL quan trọng hơn việc giữ kiến trúc đơn giản.

@@ -46,7 +46,7 @@ const worker = {
   },
   async scheduled(_controller: unknown, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil((async () => {
-      await runOTruyenIngest(env.DB);
+      await runOTruyenIngest(env.DB, { mode: "incremental", pagesPerRun: 6 });
       await runRatingEnrichment(env.DB, 8);
     })());
   },

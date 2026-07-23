@@ -18,7 +18,7 @@ export async function runRatingEnrichment(db: D1Database, requestedLimit = 6): P
   await db.batch(sourceStatements);
 
   const rows = await db.prepare(
-    "SELECT s.id, s.canonical_title AS title FROM stories s LEFT JOIN story_scores ss ON ss.story_id = s.id ORDER BY CASE WHEN ss.computed_at IS NULL THEN 0 ELSE 1 END, ss.computed_at ASC, s.updated_at DESC LIMIT ?",
+    "SELECT s.id, s.canonical_title AS title FROM stories s LEFT JOIN story_scores ss ON ss.story_id = s.id ORDER BY CASE WHEN ss.source_count IS NULL OR ss.source_count = 0 THEN 0 ELSE 1 END, ss.computed_at ASC, s.updated_at DESC LIMIT ?",
   ).bind(limit).all<StoryRow>();
 
   let enriched = 0;

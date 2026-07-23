@@ -17,7 +17,11 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: "Cấu hình ingestion không hợp lệ", code: "INVALID_REQUEST", details: null }, { status: 400 });
 
   try {
-    const result = await runOTruyenIngest(runtime.DB);
+    const result = await runOTruyenIngest(runtime.DB, {
+      mode: parsed.data.mode,
+      cursor: parsed.data.cursor,
+      pagesPerRun: parsed.data.mode === "refresh" ? 4 : 8,
+    });
     return NextResponse.json({ runId: result.runId, status: "accepted", result }, { status: 202, headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "Đồng bộ nguồn thất bại", code: "SOURCE_SYNC_FAILED", details: { file: "lib/sources/otruyen.ts", line: "batch", rootCause: "Source or D1 operation failed; inspect sync_runs" } }, { status: 502 });

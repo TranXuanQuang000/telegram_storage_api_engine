@@ -200,7 +200,7 @@ function chapterIdFromUrl(url?: string): string | null {
   return match?.[1] ?? null;
 }
 
-function provisionalCatalogScore(item: OTruyenItem): number {
+export function provisionalCatalogScore(item: OTruyenItem): number {
   const updatedAt = new Date(item.updatedAt ?? 0).getTime();
   const ageDays = Number.isFinite(updatedAt) ? Math.max(0, (Date.now() - updatedAt) / 86_400_000) : 365;
   const latestChapter = Number.parseFloat(item.chaptersLatest?.[0]?.chapter_name ?? "0");
