@@ -56,15 +56,17 @@ export function AmbientMotion() {
       event.preventDefault();
       if (root.dataset.routeTransition === "opening") return;
 
-      const transitionX = event.detail === 0 ? window.innerWidth / 2 : event.clientX;
-      const transitionY = event.detail === 0 ? window.innerHeight / 2 : event.clientY;
+      const pointerX = event.detail === 0 ? window.innerWidth / 2 : event.clientX;
+      const pointerY = event.detail === 0 ? window.innerHeight / 2 : event.clientY;
+      const transitionX = Math.min(window.innerWidth * .86, Math.max(window.innerWidth * .14, pointerX));
+      const transitionY = Math.min(window.innerHeight * .72, Math.max(window.innerHeight * .28, pointerY));
       root.style.setProperty("--transition-x", `${transitionX}px`);
       root.style.setProperty("--transition-y", `${transitionY}px`);
       anchor.closest(".story-card, .library-story-card, .hero-stage")?.setAttribute("data-transition-source", "true");
       root.dataset.routeTransition = "opening";
       routeTimer = window.setTimeout(() => {
         router.push(`${destination.pathname}${destination.search}${destination.hash}`);
-      }, 380);
+      }, 360);
     }
 
     const ledObserver = new IntersectionObserver((entries) => {
@@ -116,7 +118,7 @@ export function AmbientMotion() {
       document.querySelectorAll("[data-transition-source]").forEach((element) => {
         element.removeAttribute("data-transition-source");
       });
-    }, 620);
+    }, 560);
     return () => window.clearTimeout(revealTimer);
   }, [pathname]);
 
@@ -141,11 +143,11 @@ export function AmbientMotion() {
         </div>
       </div>
       <div className="route-transition" aria-hidden="true">
-        <span className="route-transition__gate" />
-        <span className="route-transition__core" />
-        <span className="route-transition__beam route-transition__beam--one" />
-        <span className="route-transition__beam route-transition__beam--two" />
-        <span className="route-transition__label">NEON GATE · STORY LINK</span>
+        <span className="route-transition__shutter route-transition__shutter--top" />
+        <span className="route-transition__shutter route-transition__shutter--bottom" />
+        <span className="route-transition__bloom" />
+        <span className="route-transition__scan"><i /></span>
+        <span className="route-transition__label"><i />MỰC // ĐỒNG BỘ TRUYỆN</span>
       </div>
     </>
   );
