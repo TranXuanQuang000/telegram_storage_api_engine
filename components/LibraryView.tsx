@@ -132,9 +132,9 @@ export function LibraryView() {
       <section className="library-shelf" aria-labelledby="library-title">
         <div className="library-shelf__heading">
           <div>
-            <p className="section-kicker">Bìa sách của bạn</p>
-            <h2 id="library-title">Tủ truyện & lịch sử đọc</h2>
-            <p>Truyện đã lưu và truyện vừa đọc nằm chung một nơi; tiến độ luôn hiện ngay dưới bìa.</p>
+            <p className="section-kicker">VAULT INDEX / LIVE PROGRESS</p>
+            <h2 id="library-title">Bìa truyện & dấu đọc.</h2>
+            <p>Truyện đã lưu và truyện vừa đọc cùng nằm trên một timeline; tiến độ luôn sáng ngay dưới bìa.</p>
           </div>
           {history.length ? <button type="button" onClick={clearHistory}><Trash2 aria-hidden="true" /> Xóa toàn bộ lịch sử</button> : null}
         </div>

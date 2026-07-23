@@ -1,21 +1,21 @@
 import type { Metadata } from "next";
-import { Be_Vietnam_Pro, Lora } from "next/font/google";
+import { Be_Vietnam_Pro, Space_Mono } from "next/font/google";
 import { headers } from "next/headers";
+import { AmbientMotion } from "../components/AmbientMotion";
 import { PwaRegister } from "../components/PwaRegister";
 import "./globals.css";
 
 const vietnameseSans = Be_Vietnam_Pro({
   variable: "--font-ui",
   subsets: ["latin", "vietnamese"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: ["400", "500", "600", "700", "800", "900"],
   display: "swap",
 });
 
-const vietnameseSerif = Lora({
-  variable: "--font-literary",
-  subsets: ["latin", "vietnamese"],
-  weight: ["500", "600", "700"],
-  style: ["normal", "italic"],
+const interfaceMono = Space_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  weight: ["400", "700"],
   display: "swap",
 });
 
@@ -28,16 +28,16 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = forwardedProto === "http" || forwardedProto === "https" ? forwardedProto : safeHost?.startsWith("localhost") ? "http" : "https";
   const fallback = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
   const metadataBase = new URL(safeHost ? `${protocol}://${safeHost}` : fallback);
-  const description = "Đọc manga, manhwa và manhua mượt mà; tìm đúng gu, lưu lịch sử, tải chương offline và dùng AI bằng API key của bạn.";
+  const description = "Mực Kinetic Reader — đọc manga, manhwa và manhua theo nhịp của bạn; tìm đúng gu, tiếp tục tức thì và dùng AI riêng tư.";
   return {
     metadataBase,
     title: { default: "Mực — đọc truyện theo gu", template: "%s · Mực" },
     description,
     manifest: "/manifest.webmanifest",
     applicationName: "Mực",
-    keywords: ["đọc truyện", "manga", "manhwa", "manhua", "offline", "AI recommendation"],
+    keywords: ["đọc truyện", "manga", "manhwa", "manhua", "kinetic reader", "offline", "AI recommendation"],
     icons: { icon: "/favicon.png", shortcut: "/favicon.png", apple: "/icon-192.png" },
-    openGraph: { type: "website", locale: "vi_VN", siteName: "Mực", title: "Mực — đọc truyện theo gu", description, images: [{ url: "/og.png", width: 1200, height: 630, alt: "Mực — phòng đọc manga, manhwa và manhua" }] },
+    openGraph: { type: "website", locale: "vi_VN", siteName: "Mực", title: "Mực — đọc truyện theo gu", description, images: [{ url: "/og.png", width: 1732, height: 917, alt: "Mực Kinetic Reader — đọc theo xung" }] },
     twitter: { card: "summary_large_image", title: "Mực — đọc truyện theo gu", description, images: ["/og.png"] },
   };
 }
@@ -50,9 +50,10 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body
-        className={`${vietnameseSans.variable} ${vietnameseSerif.variable} antialiased`}
+        className={`${vietnameseSans.variable} ${interfaceMono.variable} antialiased`}
       >
         <PwaRegister />
+        <AmbientMotion />
         {children}
       </body>
     </html>

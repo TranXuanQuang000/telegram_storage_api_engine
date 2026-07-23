@@ -81,7 +81,7 @@ export function AiSettings() {
   return (
     <div className="ai-settings-grid">
       <section className="ai-config-card">
-        <div className="ai-config-card__title"><KeyRound aria-hidden="true" /><div><p className="section-kicker">BYOK · chỉ trong phiên</p><h2>Chìa khóa của bạn</h2></div></div>
+        <div className="ai-config-card__title"><KeyRound aria-hidden="true" /><div><p className="section-kicker">SECURE LINK / SESSION ONLY</p><h2>Kết nối model.</h2></div></div>
         <label><span>Nhà cung cấp</span><select value={provider} onChange={(event) => changeProvider(event.target.value as Provider)}><option value="openai-compatible">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Google Gemini</option></select></label>
         <label><span>Model</span><input value={model} onChange={(event) => setModel(event.target.value)} maxLength={80} /></label>
         <label><span>API key</span><div className="key-input"><input type={showKey ? "text" : "password"} value={key} onChange={(event) => setKey(event.target.value)} autoComplete="off" placeholder="Dán key cho phiên này" /><button type="button" onClick={() => setShowKey((value) => !value)} aria-label={showKey ? "Ẩn API key" : "Hiện API key"}>{showKey ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}</button></div></label>
@@ -94,7 +94,7 @@ export function AiSettings() {
         <div className="privacy-box"><ShieldCheck aria-hidden="true" /><p><strong>Không lưu vào D1/localStorage.</strong><br />Key nằm trong `sessionStorage`, biến mất khi bạn đóng tab. Proxy không ghi request hay Authorization vào log ứng dụng.</p></div>
       </section>
       <section className="ai-playground">
-        <div><p className="section-kicker">Hiểu truyện mẫu · so nội dung</p><h2>Hỏi bằng lời bạn vẫn nói.</h2><p>Mực lọc ràng buộc trước, rồi xếp lại bằng nội dung, điểm cộng đồng và review hữu ích. Kết quả luôn là truyện thật có bìa và nút mở.</p></div>
+        <div><p className="section-kicker">QUERY TERMINAL / VERIFIED CATALOG</p><h2>Nói gu. Khóa tín hiệu.</h2><p>Mực lọc ràng buộc trước, rồi xếp lại bằng nội dung, điểm cộng đồng và review hữu ích. Kết quả luôn là truyện thật có bìa và nút mở.</p></div>
         <div className="ai-examples" aria-label="Ví dụ câu hỏi">
           <button type="button" onClick={() => setQuery("Tìm truyện giống Solo Leveling, có tăng tiến sức mạnh rõ nhưng nhân vật chính bớt lạnh lùng.")}>Giống Solo Leveling</button>
           <button type="button" onClick={() => setQuery("Tìm truyện có nội dung tương tự Blue Lock nhưng là môn thể thao khác.")}>Tương tự Blue Lock</button>

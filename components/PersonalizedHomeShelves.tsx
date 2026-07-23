@@ -144,8 +144,8 @@ export function PersonalizedHomeShelves() {
       <section className="catalog-section page-shell" aria-labelledby="favorite-title">
         <div className="section-heading">
           <div>
-            <p className="section-kicker">{personal ? "Dựa trên số lần mở & tủ truyện" : "Gợi ý mở đầu"}</p>
-            <h2 id="favorite-title">{personal ? "Bộ bạn thích và đọc nhiều nhất." : "Truyện được cộng đồng yêu thích."}</h2>
+            <p className="section-kicker">{personal ? "YOUR FREQUENCY / LIVE" : "STARTER FREQUENCY"}</p>
+            <h2 id="favorite-title">{personal ? "Bộ bạn thích và đọc nhiều nhất." : "Tần số được cộng đồng yêu thích."}</h2>
           </div>
           <Link className="text-link" href="/library">Mở tủ truyện <ArrowRight aria-hidden="true" /></Link>
         </div>
@@ -155,8 +155,8 @@ export function PersonalizedHomeShelves() {
       <section className="catalog-section catalog-section--personal page-shell" aria-labelledby="personal-title">
         <div className="section-heading">
           <div>
-            <p className="section-kicker">Có thể hợp gu tiếp theo</p>
-            <h2 id="personal-title">Đề xuất riêng cho bạn.</h2>
+            <p className="section-kicker">NEXT SIGNAL / PERSONAL</p>
+            <h2 id="personal-title">Đề xuất riêng cho bạn — quỹ đạo kế tiếp.</h2>
             <p className="personal-shelf-note">Xếp từ thể loại bạn đã lưu, lịch sử đọc và điểm cộng đồng; dữ liệu cá nhân không rời thiết bị.</p>
           </div>
           <Link className="text-link" href="/settings/ai"><Sparkles aria-hidden="true" /> Nhờ AI tìm kỹ hơn</Link>

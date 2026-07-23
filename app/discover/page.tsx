@@ -57,10 +57,10 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
     <div className="app-shell">
       <SiteHeader />
       <main className="discover-page page-shell">
-        <header className="page-intro">
-          <p className="section-kicker">Bàn tra cứu</p>
-          <h1>Tìm đúng gu,<br /><em>không mò cả tối.</em></h1>
-          <p>Chọn một lần để bắt buộc có, chọn lần hai để loại trừ. Mỗi bộ lọc đều nằm trong URL để bạn lưu hoặc gửi cho bạn bè.</p>
+        <header className="page-intro" data-code="SCAN">
+          <p className="section-kicker">SIGNAL SCANNER / 26K+ STORIES</p>
+          <h1>Khóa đúng<br /><em>tần số.</em></h1>
+          <p>Trộn thể loại, mood, nhịp và điểm đánh giá thành một truy vấn duy nhất. Mực lọc toàn chỉ mục trước khi chia trang — không bỏ sót vì rơi nhầm trang nguồn.</p>
         </header>
         <div className="discover-layout">
           <DiscoverFilters key={JSON.stringify(params)} initialQuery={query} />
