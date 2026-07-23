@@ -14,7 +14,15 @@ export function StoryCover({
   if (src) {
     return (
       <span className={`story-cover ${className}`}>
-        <Image src={src} alt={`Bìa ${title}`} fill sizes="(max-width: 640px) 38vw, 180px" priority={priority} unoptimized />
+        <Image
+          src={src}
+          alt={`Bìa ${title}`}
+          fill
+          sizes="(max-width: 640px) 44vw, (max-width: 1120px) 24vw, 180px"
+          priority={priority}
+          unoptimized
+          style={{ objectFit: "cover", objectPosition: "center top" }}
+        />
       </span>
     );
   }
@@ -25,4 +33,3 @@ export function StoryCover({
     </span>
   );
 }
-

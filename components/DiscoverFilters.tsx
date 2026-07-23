@@ -2,7 +2,7 @@
 
 import { ArrowRight, Check, Minus, Search, SlidersHorizontal, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 
 const genres = [
   ["action", "Hành động"], ["fantasy", "Kỳ ảo"], ["romance", "Tình cảm"],
@@ -22,13 +22,16 @@ export function DiscoverFilters({ initialQuery = "" }: { initialQuery?: string }
   const router = useRouter();
   const current = useSearchParams();
   const [query, setQuery] = useState(initialQuery);
+  const [isPending, startTransition] = useTransition();
   const include = new Set(current.getAll("include"));
   const exclude = new Set(current.getAll("exclude"));
 
   function navigate(next: URLSearchParams) {
     next.delete("page");
     const value = next.toString();
-    router.push(value ? `/discover?${value}` : "/discover");
+    startTransition(() => {
+      router.replace(value ? `/discover?${value}` : "/discover", { scroll: false });
+    });
   }
 
   function toggleGenre(slug: string) {
@@ -61,11 +64,11 @@ export function DiscoverFilters({ initialQuery = "" }: { initialQuery?: string }
   }
 
   return (
-    <aside className="filter-panel" aria-label="Bộ lọc truyện">
-      <div className="filter-panel__title"><SlidersHorizontal aria-hidden="true" /><strong>Lọc sâu</strong><span>chạm 2 lần để loại trừ</span></div>
+    <aside className={`filter-panel${isPending ? " is-pending" : ""}`} aria-label="Bộ lọc truyện" aria-busy={isPending}>
+      <div className="filter-panel__title"><SlidersHorizontal aria-hidden="true" /><strong>Lọc sâu</strong><span>{isPending ? "đang cập nhật…" : "chạm 2 lần để loại trừ"}</span></div>
       <form className="discover-search" onSubmit={submit} role="search">
         <Search aria-hidden="true" />
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tên, tác giả, hoặc 'nữ chính trả thù'" aria-label="Từ khóa tìm truyện" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tên truyện — gõ gần đúng cũng được" aria-label="Tên truyện cần tìm, có hỗ trợ sai chính tả" />
         {query ? <button type="button" onClick={() => setQuery("")} aria-label="Xóa từ khóa"><X aria-hidden="true" /></button> : null}
         <button className="discover-search__submit" type="submit" aria-label="Tìm truyện"><ArrowRight aria-hidden="true" /></button>
       </form>
@@ -99,7 +102,7 @@ export function DiscoverFilters({ initialQuery = "" }: { initialQuery?: string }
         <label><span>Nhịp truyện</span><select data-filter="pace" value={current.get("pace") ?? ""} onChange={(event) => setValue("pace", event.target.value)}><option value="">Mọi nhịp</option><option value="pace-fast">Nhanh, vào việc sớm</option></select></label>
         <label><span>Độ dài hiện có</span><select data-filter="max-chapters" value={current.get("maxChapters") ?? ""} onChange={(event) => setValue("maxChapters", event.target.value)}><option value="">Không giới hạn</option><option value="50">Dưới 50 chương</option><option value="100">Dưới 100 chương</option><option value="300">Dưới 300 chương</option></select></label>
         <label><span>Điểm tối thiểu</span><select data-filter="min-score" value={current.get("minScore") ?? ""} onChange={(event) => setValue("minScore", event.target.value)}><option value="">Không giới hạn</option><option value="3.5">3.5 sao</option><option value="4">4 sao</option><option value="4.25">4.25 sao</option></select></label>
-        <label><span>Sắp xếp</span><select data-filter="sort" value={current.get("sort") ?? "latest"} onChange={(event) => setValue("sort", event.target.value)}><option value="latest">Mới cập nhật</option><option value="rating">Điểm tin cậy</option><option value="relevance">Phù hợp nhất</option><option value="shortest">Ít chương trước</option></select></label>
+        <label><span>Sắp xếp</span><select data-filter="sort" value={current.get("sort") ?? "latest"} onChange={(event) => setValue("sort", event.target.value)}><option value="latest">Mới cập nhật</option><option value="rating">Đánh giá cao nhất</option><option value="relevance">Tên phù hợp nhất</option><option value="shortest">Ít chương trước</option></select></label>
       </div>
       <div className="filter-legend"><span><Check aria-hidden="true" /> phải có</span><span><Minus aria-hidden="true" /> loại trừ</span></div>
     </aside>

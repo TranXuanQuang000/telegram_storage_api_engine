@@ -11,7 +11,14 @@ npm ci
 npm run dev
 ```
 
-Mở `http://localhost:3000`. Các lệnh kiểm tra:
+Để chạy đúng bundle production Cloudflare-compatible tại local:
+
+```powershell
+npm run build
+npx wrangler dev --config dist/server/wrangler.json --port 3000 --persist-to .wrangler/state
+```
+
+Mở `http://127.0.0.1:3000`. Các lệnh kiểm tra:
 
 ```powershell
 npm run lint
@@ -22,7 +29,7 @@ npm test
 ## Dữ liệu và quyền sử dụng
 
 - Catalog/chapter hiện dùng public API của OTruyen và luôn giữ đường dẫn provenance.
-- Điểm 5 sao được làm giàu từ aggregate rating công khai của AniList và Kitsu; chỉ hiện nhãn “tổng hợp” khi có ít nhất hai nguồn khớp tên.
+- Điểm 5 sao được làm giàu từ aggregate rating công khai của AniList và Kitsu; chỉ hiện nhãn “tổng hợp” khi có ít nhất hai nguồn khớp tên. Kệ đề xuất ưu tiên điểm cao, tỷ lệ tích cực cao và tỷ lệ chấm xấu thấp.
 - Mực không sao chép chapter lên máy chủ riêng. Tải offline dùng Cache Storage trên thiết bị, còn manifest nằm trong IndexedDB.
 - Trước khi thêm connector mới, cần kiểm tra điều khoản, robots/rate limit và quyền phân phối của nguồn. Connector không được dùng để vượt paywall hoặc cơ chế bảo vệ truy cập.
 
@@ -44,7 +51,13 @@ Cloudflare scheduled handler chạy catalog ingestion rồi làm giàu rating th
 
 ## AI BYOK
 
-Mực hỗ trợ OpenAI, Anthropic và Gemini. Key chỉ nằm trong `sessionStorage`, được gửi bằng header tới proxy cùng origin, không ghi vào D1, log hay localStorage. Endpoint AI có schema validation, allowlist provider/model, rate limit và chỉ được giới thiệu các truyện có trong catalog ứng viên.
+Mực hỗ trợ OpenAI, Anthropic và Gemini. Key chỉ nằm trong `sessionStorage`, được gửi bằng header tới proxy cùng origin, không ghi vào D1, log hay localStorage. Khi người dùng hỏi “truyện giống ABC”, hệ thống nhận diện ABC, lấy tóm tắt/thể loại/nhịp truyện, xây candidate pool gần nội dung rồi mới gọi model. Endpoint AI có schema validation, allowlist provider/model, rate limit và chỉ được giới thiệu các truyện có trong catalog ứng viên.
+
+## Reader và tìm kiếm
+
+- Tìm tên hỗ trợ bỏ dấu, đảo ký tự nhẹ, thiếu khoảng trắng và gợi ý gần đúng. Nếu không có tên chính xác, giao diện luôn nói rõ trước khi hiển thị đề xuất.
+- Reader có lối thoát nhanh về trang chủ/khám phá, mục lục tìm kiếm được, nút chương trước/sau và tự chuyển chương khi bấm tiếp ở trang cuối.
+- Font Be Vietnam Pro + Lora được bundle với subset tiếng Việt; bìa luôn phủ kín khung 2:3 và rating nằm trực tiếp trên bìa.
 
 ## Cấu trúc chính
 

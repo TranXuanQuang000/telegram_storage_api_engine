@@ -14,6 +14,7 @@ function loadTypescriptModule(file) {
 
 const { aggregateRatings } = loadTypescriptModule("../lib/ratings.ts");
 const { deriveAutoTags, inferContentRating } = loadTypescriptModule("../lib/auto-tags.ts");
+const { extractReferenceTitle, normalizeTitle, titleSimilarity } = loadTypescriptModule("../lib/search-utils.ts");
 
 test("rating aggregation deduplicates sources and produces a bounded five-star score", () => {
   const now = new Date("2026-07-23T00:00:00.000Z");
@@ -40,4 +41,23 @@ test("deterministic tags and content guardrails come from source labels", () => 
   assert.ok(tags.some((tag) => tag.slug === "mood-clever"));
   assert.ok(tags.every((tag) => tag.origin === "rule"));
   assert.equal(inferContentRating(["romance", "mature"]), "mature");
+});
+
+test("Vietnamese title search tolerates accents, missing spaces and small typos", () => {
+  assert.equal(normalizeTitle("Truyện tranh: Toàn Trí Độc Giả"), "toan tri doc gia");
+  assert.ok(titleSimilarity("Blue Lokc", "Blue Lock") > 0.7);
+  assert.ok(titleSimilarity("Toan Tri Doc Gia", "Toàn Tri Độc Giả") > 0.9);
+  assert.ok(titleSimilarity("Solo Leveling", "Blue Lock") < 0.4);
+});
+
+test("AI reference extraction understands natural Vietnamese similarity requests", () => {
+  assert.equal(
+    extractReferenceTitle("Tìm truyện giống truyện Toàn Tri Độc Giả nhưng ít hài hơn."),
+    "Toàn Tri Độc Giả",
+  );
+  assert.equal(
+    extractReferenceTitle("Có bộ nào tương tự “Blue Lock” nhưng chơi bóng rổ không?"),
+    "Blue Lock",
+  );
+  assert.equal(extractReferenceTitle("Tìm truyện nữ chính mạnh"), null);
 });

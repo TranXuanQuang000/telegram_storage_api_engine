@@ -1,6 +1,7 @@
 import { deriveAutoTags, inferContentRating } from "./auto-tags";
-import { getExternalRating } from "./external-ratings";
-import type { RatingAggregate } from "./ratings";
+import { getAniListRatingSignals, getExternalRating } from "./external-ratings";
+import { aggregateRatings, type RatingAggregate } from "./ratings";
+import { normalizeTitle, titleSimilarity } from "./search-utils";
 
 export type StoryCardData = {
   id: string;
@@ -18,6 +19,11 @@ export type StoryCardData = {
   updatedAt: string;
   score: number | null;
   scoreSource: string | null;
+  ratingVotes?: number;
+  positiveRatio?: number | null;
+  negativeRatio?: number | null;
+  recommendationScore?: number;
+  recommendationReason?: string | null;
 };
 
 export type CatalogPageData = {
@@ -27,6 +33,11 @@ export type CatalogPageData = {
   totalItems: number;
   totalPages: number;
   sourceLabel: string;
+  searchNotice?: {
+    requestedQuery: string;
+    exactMatch: boolean;
+    suggestions: Array<{ slug: string; title: string; similarity: number }>;
+  };
 };
 
 export type ChapterData = {
@@ -83,6 +94,7 @@ type OTruyenListPayload = {
 
 const API_BASE = "https://otruyenapi.com/v1/api";
 const DEFAULT_CDN = "https://img.otruyenapi.com";
+const jsonCache = new Map<string, { expiresAt: number; value?: unknown; pending?: Promise<unknown> }>();
 
 const scoreBySlug: Record<string, { value: number; source: string }> = {
   "blue-lock": { value: 4.1, source: "AniList · 121K người quan tâm" },
@@ -199,19 +211,72 @@ function normalizeItem(item: OTruyenItem, cdn = DEFAULT_CDN): StoryCardData {
   };
 }
 
-async function fetchJson<T>(url: string, timeoutMs = 7000): Promise<T> {
+async function fetchJson<T>(url: string, timeoutMs = 5_000, ttlMs = 2 * 60 * 1_000): Promise<T> {
+  const cached = jsonCache.get(url);
+  if (cached && cached.expiresAt > Date.now()) {
+    if (cached.value !== undefined) return cached.value as T;
+    if (cached.pending) return await cached.pending as T;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
+  const pending = (async () => {
     const response = await fetch(url, {
       headers: { Accept: "application/json" },
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Source returned ${response.status}`);
     return await response.json() as T;
+  })();
+  jsonCache.set(url, { expiresAt: Date.now() + ttlMs, pending });
+  try {
+    const value = await pending;
+    jsonCache.set(url, { expiresAt: Date.now() + ttlMs, value });
+    return value;
+  } catch (error) {
+    jsonCache.delete(url);
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function enrichStoriesWithRatings(stories: StoryCardData[]): Promise<StoryCardData[]> {
+  if (!stories.length) return stories;
+  const signals = await getAniListRatingSignals(stories.map((story) => ({
+    id: story.id,
+    titles: [story.title, story.originTitle ?? ""],
+  })));
+  return stories.map((story) => {
+    const signal = signals.get(story.id);
+    if (!signal) return story;
+    const positive = signal.positiveRatio === null ? null : Math.round(signal.positiveRatio * 100);
+    const reason = positive !== null
+      ? `${positive}% đánh giá tích cực`
+      : `${signal.voteCount.toLocaleString("vi-VN")} lượt chấm`;
+    return {
+      ...story,
+      score: signal.score5,
+      scoreSource: `${signal.sourceName} · ${signal.voteCount.toLocaleString("vi-VN")} lượt chấm`,
+      ratingVotes: signal.voteCount,
+      positiveRatio: signal.positiveRatio,
+      negativeRatio: signal.negativeRatio,
+      recommendationScore: signal.qualityScore,
+      recommendationReason: reason,
+    };
+  });
+}
+
+export async function getCommunityRecommendations(): Promise<StoryCardData[]> {
+  const latest = await getHomeStories();
+  const enriched = await enrichStoriesWithRatings(latest.slice(0, 18));
+  const wellRated = enriched
+    .filter((story) => story.score !== null && story.score >= 3.7 && (story.negativeRatio ?? 0) <= 0.18)
+    .sort((left, right) =>
+      (right.recommendationScore ?? right.score ?? 0) - (left.recommendationScore ?? left.score ?? 0)
+      || (right.ratingVotes ?? 0) - (left.ratingVotes ?? 0)
+    );
+  return (wellRated.length >= 4 ? wellRated : enriched.filter((story) => story.score !== null).sort((left, right) => (right.score ?? 0) - (left.score ?? 0))).slice(0, 6);
 }
 
 export async function getHomeStories(): Promise<StoryCardData[]> {
@@ -240,16 +305,51 @@ export async function searchStories(query: string, page = 1): Promise<StoryCardD
   }
 }
 
+function storySearchSimilarity(query: string, story: StoryCardData) {
+  return Math.max(titleSimilarity(query, story.title), story.originTitle ? titleSimilarity(query, story.originTitle) : 0);
+}
+
+async function fuzzyTitleSuggestions(query: string, existing: StoryCardData[]): Promise<StoryCardData[]> {
+  const queryTokens = normalizeTitle(query)
+    .split(" ")
+    .filter((token) => token.length >= 3)
+    .sort((left, right) => right.length - left.length)
+    .slice(0, 2);
+  const urls = [
+    `${API_BASE}/home`,
+    `${API_BASE}/danh-sach/truyen-moi?page=1`,
+    `${API_BASE}/danh-sach/truyen-moi?page=2`,
+    `${API_BASE}/danh-sach/truyen-moi?page=3`,
+    ...queryTokens.map((token) => `${API_BASE}/tim-kiem?keyword=${encodeURIComponent(token)}&page=1`),
+  ];
+  const settled = await Promise.allSettled(urls.map((url) => fetchJson<OTruyenListPayload>(url, 4_500, 5 * 60 * 1_000)));
+  const candidates = [
+    ...existing,
+    ...settled.flatMap((result) => result.status === "fulfilled"
+      ? (result.value.data?.items ?? []).map((item) => normalizeItem(item, result.value.data?.APP_DOMAIN_CDN_IMAGE))
+      : []),
+  ];
+  const deduped = [...new Map(candidates.map((story) => [story.id, story])).values()];
+  return deduped
+    .map((story) => ({ story, similarity: storySearchSimilarity(query, story) }))
+    .filter((item) => item.similarity >= 0.2)
+    .sort((left, right) => right.similarity - left.similarity)
+    .slice(0, 8)
+    .map((item) => item.story);
+}
+
 export async function getDiscoverCatalog({
   query = "",
   page = 1,
   primaryGenre,
   status,
+  enrichRatings = false,
 }: {
   query?: string;
   page?: number;
   primaryGenre?: string;
   status?: string;
+  enrichRatings?: boolean;
 }): Promise<CatalogPageData> {
   const safePage = Math.min(Math.max(Math.floor(page) || 1, 1), 500);
   let path = `/danh-sach/truyen-moi?page=${safePage}`;
@@ -261,16 +361,48 @@ export async function getDiscoverCatalog({
   try {
     const payload = await fetchJson<OTruyenListPayload>(`${API_BASE}${path}`);
     const pagination = payload.data?.params?.pagination;
-    const stories = (payload.data?.items ?? []).map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE));
+    let stories = (payload.data?.items ?? []).map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE));
     const pageSize = pagination?.totalItemsPerPage ?? (stories.length || 24);
-    const totalItems = pagination?.totalItems ?? stories.length;
+    let totalItems = pagination?.totalItems ?? stories.length;
+    let totalPages = pagination?.totalPages ?? Math.max(1, Math.ceil(totalItems / pageSize));
+    let sourceLabel = payload.data?.titlePage ?? "OTruyen API";
+    let searchNotice: CatalogPageData["searchNotice"];
+    if (query.trim()) {
+      const exactMatch = stories.some((story) =>
+        normalizeTitle(story.title) === normalizeTitle(query)
+        || Boolean(story.originTitle && normalizeTitle(story.originTitle) === normalizeTitle(query))
+        || storySearchSimilarity(query, story) >= 0.9
+      );
+      if (!exactMatch) {
+        const suggestions = await fuzzyTitleSuggestions(query, stories);
+        if (!stories.length) {
+          stories = suggestions;
+          totalItems = suggestions.length;
+          totalPages = 1;
+          sourceLabel = "Gợi ý tên gần đúng từ OTruyen";
+        }
+        searchNotice = {
+          requestedQuery: query,
+          exactMatch: false,
+          suggestions: suggestions.slice(0, 5).map((story) => ({
+            slug: story.slug,
+            title: story.title,
+            similarity: storySearchSimilarity(query, story),
+          })),
+        };
+      } else {
+        searchNotice = { requestedQuery: query, exactMatch: true, suggestions: [] };
+      }
+    }
+    if (enrichRatings) stories = await enrichStoriesWithRatings(stories);
     return {
       stories,
       page: pagination?.currentPage ?? safePage,
       pageSize,
       totalItems,
-      totalPages: pagination?.totalPages ?? Math.max(1, Math.ceil(totalItems / pageSize)),
-      sourceLabel: payload.data?.titlePage ?? "OTruyen API",
+      totalPages,
+      sourceLabel,
+      searchNotice,
     };
   } catch {
     const stories = await searchStories(query, safePage);
@@ -278,7 +410,10 @@ export async function getDiscoverCatalog({
   }
 }
 
-export async function getStory(slug: string): Promise<StoryDetailData | null> {
+export async function getStory(
+  slug: string,
+  options: { includeExternalRating?: boolean } = {},
+): Promise<StoryDetailData | null> {
   if (!/^[a-z0-9-]{1,160}$/.test(slug)) return null;
   try {
     const payload = await fetchJson<{
@@ -287,7 +422,9 @@ export async function getStory(slug: string): Promise<StoryDetailData | null> {
     const item = payload.data?.item;
     if (!item) return null;
     const summary = normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE);
-    const rating = await getExternalRating([item.name ?? "", ...(item.origin_name ?? [])]);
+    const rating = options.includeExternalRating === false
+      ? aggregateRatings([])
+      : await getExternalRating([item.name ?? "", ...(item.origin_name ?? [])]);
     const chapterRows = item.chapters?.flatMap((server) => server.server_data ?? []) ?? [];
     const seenChapterNumbers = new Set<string>();
     const chapters = chapterRows

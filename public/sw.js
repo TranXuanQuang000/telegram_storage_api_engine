@@ -73,14 +73,14 @@ async function flushQueuedProgress() {
   });
   for (const item of queued) {
     const response = await fetch("/api/progress", { method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(item) });
-    if (response.ok || response.status === 400) {
+    if (response.ok || response.status === 400 || response.status === 401 || response.status === 403) {
       await new Promise((resolve, reject) => {
         const request = db.transaction("progressQueue", "readwrite").objectStore("progressQueue").delete(item.storyId);
         request.onsuccess = resolve;
         request.onerror = () => reject(request.error);
       });
     }
-    if (response.status === 401 || response.status === 503) break;
+    if (response.status === 401 || response.status === 403 || response.status === 503) break;
   }
   db.close();
 }

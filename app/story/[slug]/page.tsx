@@ -1,22 +1,23 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, ExternalLink, Eye, ShieldCheck, Star } from "lucide-react";
+import { Suspense } from "react";
+import { ArrowLeft, ArrowRight, Eye } from "lucide-react";
+import { RatingPanel, RatingPanelFallback } from "../../../components/RatingPanel";
 import { SiteHeader } from "../../../components/SiteHeader";
 import { StoryActions } from "../../../components/StoryActions";
 import { StoryCover } from "../../../components/StoryCover";
 import { getStory } from "../../../lib/catalog";
-import { ratingConfidenceLabel } from "../../../lib/ratings";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const story = await getStory(slug);
+  const story = await getStory(slug, { includeExternalRating: false });
   return { title: story?.title ?? "Không tìm thấy truyện", description: story?.synopsis.slice(0, 150) };
 }
 
 export default async function StoryPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const story = await getStory(slug);
+  const story = await getStory(slug, { includeExternalRating: false });
   if (!story) notFound();
   const firstReadable = story.latestChapterId;
 
@@ -43,23 +44,14 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
                 <StoryActions story={story} chapterId={firstReadable} />
               </div>
             </div>
-            <aside className="score-panel" aria-label="Đánh giá và nguồn">
-              <p className="section-kicker">{story.rating.isAggregate ? "Điểm tổng hợp" : "Điểm có nguồn"}</p>
-              {story.score ? (
-                <><div className="score-panel__number"><Star aria-hidden="true" />{story.score.toFixed(1)}<small>/5</small></div><p>{story.scoreSource}</p></>
-              ) : (
-                <><div className="score-panel__number score-panel__number--empty">—</div><p>Chưa đủ nguồn đánh giá đáng tin để tính điểm.</p></>
-              )}
-              <div className="confidence-row"><ShieldCheck aria-hidden="true" /><span>{story.rating.score5 ? `${ratingConfidenceLabel(story.rating.confidence)} · ${story.rating.voteCount.toLocaleString("vi-VN")} lượt chấm` : "Không biến thiếu dữ liệu thành 0 sao"}</span></div>
-              {story.rating.sources.length ? (
-                <ul className="rating-sources" aria-label="Nguồn tạo nên điểm">
-                  {story.rating.sources.map((source) => (
-                    <li key={source.sourceId}><a href={source.sourceUrl} target="_blank" rel="noreferrer"><span>{source.sourceName}</span><strong>{source.score5.toFixed(2)} · {source.voteCount.toLocaleString("vi-VN")}</strong><ExternalLink aria-hidden="true" /></a></li>
-                  ))}
-                </ul>
-              ) : null}
-              <a className="source-link" href={story.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" /> Xem nguồn OTruyen</a>
-            </aside>
+            <Suspense fallback={<RatingPanelFallback />}>
+              <RatingPanel
+                titles={[story.title, story.originTitle ?? ""]}
+                sourceUrl={story.sourceUrl}
+                fallbackScore={story.score}
+                fallbackSource={story.scoreSource}
+              />
+            </Suspense>
           </div>
         </section>
 

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { Suspense } from "react";
 import { ArrowRight, RefreshCcw, ShieldCheck, Sparkles } from "lucide-react";
+import { CommunityPicks, CommunityPicksFallback } from "../components/CommunityPicks";
 import { ContinueReading } from "../components/ContinueReading";
 import { SiteHeader } from "../components/SiteHeader";
 import { StoryCard } from "../components/StoryCard";
@@ -62,6 +64,10 @@ export default async function Home() {
             {latest.map((story, index) => <StoryCard key={story.id} story={story} priority={index < 3} />)}
           </div>
         </section>
+
+        <Suspense fallback={<CommunityPicksFallback />}>
+          <CommunityPicks />
+        </Suspense>
 
         <section className="ai-editorial page-shell" aria-labelledby="ai-title">
           <div className="ai-editorial__mark"><Sparkles aria-hidden="true" /><span>BYOK</span></div>

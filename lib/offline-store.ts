@@ -127,21 +127,56 @@ export type QueuedProgress = {
   updatedAt: string;
 };
 
+let progressSyncDisabled = false;
+let nextProgressFlushAt = 0;
+let progressFlushInFlight: Promise<void> | null = null;
+let pendingProgress: Omit<QueuedProgress, "updatedAt"> | null = null;
+let progressDebounce: ReturnType<typeof setTimeout> | null = null;
+
 export async function flushProgressQueue() {
-  const queued = await withNamedStore<QueuedProgress[]>(PROGRESS_STORE, "readonly", (store) => store.getAll());
-  for (const item of queued) {
-    try {
-      const response = await fetch("/api/progress", { method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(item) });
-      if (response.ok || response.status === 400) await withNamedStore(PROGRESS_STORE, "readwrite", (store) => store.delete(item.storyId));
-      if (response.status === 401 || response.status === 503) break;
-    } catch { break; }
-  }
+  if (progressSyncDisabled || Date.now() < nextProgressFlushAt) return;
+  if (progressFlushInFlight) return progressFlushInFlight;
+  progressFlushInFlight = (async () => {
+    const queued = await withNamedStore<QueuedProgress[]>(PROGRESS_STORE, "readonly", (store) => store.getAll());
+    for (const item of queued) {
+      try {
+        const response = await fetch("/api/progress", { method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(item) });
+        if (response.ok || response.status === 400) {
+          await withNamedStore(PROGRESS_STORE, "readwrite", (store) => store.delete(item.storyId));
+          continue;
+        }
+        if (response.status === 401 || response.status === 403) {
+          progressSyncDisabled = true;
+          await withNamedStore(PROGRESS_STORE, "readwrite", (store) => store.delete(item.storyId));
+          break;
+        }
+        nextProgressFlushAt = Date.now() + 60_000;
+        break;
+      } catch {
+        nextProgressFlushAt = Date.now() + 60_000;
+        break;
+      }
+    }
+  })().finally(() => { progressFlushInFlight = null; });
+  return progressFlushInFlight;
 }
 
 export async function queueProgress(item: Omit<QueuedProgress, "updatedAt">) {
-  await withNamedStore(PROGRESS_STORE, "readwrite", (store) => store.put({ ...item, updatedAt: new Date().toISOString() } satisfies QueuedProgress));
-  if (navigator.onLine) void flushProgressQueue();
-  const registration = await navigator.serviceWorker?.ready.catch(() => null);
-  const sync = (registration as (ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }) | null)?.sync;
-  if (sync) await sync.register("muc-progress").catch(() => undefined);
+  if (progressSyncDisabled) return;
+  pendingProgress = item;
+  if (progressDebounce) clearTimeout(progressDebounce);
+  progressDebounce = setTimeout(() => {
+    const pending = pendingProgress;
+    pendingProgress = null;
+    progressDebounce = null;
+    if (!pending || progressSyncDisabled) return;
+    void (async () => {
+      await withNamedStore(PROGRESS_STORE, "readwrite", (store) => store.put({ ...pending, updatedAt: new Date().toISOString() } satisfies QueuedProgress));
+      if (navigator.onLine) void flushProgressQueue();
+      if (progressSyncDisabled) return;
+      const registration = await navigator.serviceWorker?.ready.catch(() => null);
+      const sync = (registration as (ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }) | null)?.sync;
+      if (sync) await sync.register("muc-progress").catch(() => undefined);
+    })();
+  }, 700);
 }
