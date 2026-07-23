@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Be_Vietnam_Pro, Space_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import { AmbientMotion } from "../components/AmbientMotion";
+import { MucPet } from "../components/MucPet";
 import { PwaRegister } from "../components/PwaRegister";
 import "./globals.css";
 
@@ -54,6 +55,7 @@ export default function RootLayout({
       >
         <PwaRegister />
         <AmbientMotion />
+        <MucPet />
         {children}
       </body>
     </html>

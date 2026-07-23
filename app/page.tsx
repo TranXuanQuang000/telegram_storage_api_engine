@@ -53,17 +53,6 @@ export default async function Home() {
             </div>
           ) : null}
           <a className="hero-scroll" href="#personal-feed"><ArrowDown aria-hidden="true" /> CUỘN ĐỂ ĐỔI NHỊP</a>
-          <div className="home-pet-lane" aria-hidden="true">
-            <div className="home-pet">
-              <span className="home-pet__status">MỰC BOT // ONLINE</span>
-              <span className="home-pet__turn">
-                <span className="home-pet__body">
-                  <Image src="/muc-pet.webp" alt="" width={768} height={512} sizes="(max-width: 38rem) 7rem, 10rem" />
-                </span>
-              </span>
-              <span className="home-pet__shadow" />
-            </div>
-          </div>
           <div className="hero-ink" aria-hidden="true">PULSE</div>
         </section>
 
