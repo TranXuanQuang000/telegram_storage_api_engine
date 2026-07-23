@@ -12,8 +12,19 @@ export function AmbientMotion() {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (reduced.matches) return;
 
+    const navigatorHints = navigator as Navigator & {
+      deviceMemory?: number;
+      connection?: { saveData?: boolean };
+    };
+    const lowPower = (navigator.hardwareConcurrency ?? 8) <= 4
+      || (navigatorHints.deviceMemory ?? 8) <= 4
+      || navigatorHints.connection?.saveData === true
+      || window.matchMedia("(pointer: coarse)").matches;
+    root.dataset.motionQuality = lowPower ? "lite" : "full";
+
     let frame = 0;
     let routeTimer = 0;
+    let observerFrame = 0;
     function updatePointer(event: PointerEvent) {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
@@ -26,7 +37,9 @@ export function AmbientMotion() {
     function updateScroll() {
       const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
       root.style.setProperty("--scroll-progress", String(Math.min(1, window.scrollY / scrollable)));
-      root.style.setProperty("--scroll-shift", `${window.scrollY % 56}px`);
+    }
+    function updateVisibility() {
+      root.dataset.motionState = document.hidden ? "paused" : "running";
     }
     function beginNeonRoute(event: MouseEvent) {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -51,19 +64,45 @@ export function AmbientMotion() {
       root.dataset.routeTransition = "opening";
       routeTimer = window.setTimeout(() => {
         router.push(`${destination.pathname}${destination.search}${destination.hash}`);
-      }, 520);
+      }, 380);
     }
 
-    window.addEventListener("pointermove", updatePointer, { passive: true });
+    const ledObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        entry.target.toggleAttribute("data-motion-active", entry.isIntersecting);
+      });
+    }, { rootMargin: "160px 0px", threshold: 0.01 });
+    function observeNewLeds() {
+      cancelAnimationFrame(observerFrame);
+      observerFrame = requestAnimationFrame(() => {
+        document.querySelectorAll<HTMLElement>(".story-cover__led:not([data-motion-ready])").forEach((led) => {
+          led.dataset.motionReady = "true";
+          ledObserver.observe(led);
+        });
+      });
+    }
+    const mutationObserver = new MutationObserver(observeNewLeds);
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    observeNewLeds();
+
+    if (!lowPower) window.addEventListener("pointermove", updatePointer, { passive: true });
     window.addEventListener("scroll", updateScroll, { passive: true });
     window.addEventListener("click", beginNeonRoute, true);
+    document.addEventListener("visibilitychange", updateVisibility);
     updateScroll();
+    updateVisibility();
     return () => {
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(observerFrame);
       window.clearTimeout(routeTimer);
       window.removeEventListener("pointermove", updatePointer);
       window.removeEventListener("scroll", updateScroll);
       window.removeEventListener("click", beginNeonRoute, true);
+      document.removeEventListener("visibilitychange", updateVisibility);
+      mutationObserver.disconnect();
+      ledObserver.disconnect();
+      delete root.dataset.motionQuality;
+      delete root.dataset.motionState;
     };
   }, [router]);
 
@@ -77,7 +116,7 @@ export function AmbientMotion() {
       document.querySelectorAll("[data-transition-source]").forEach((element) => {
         element.removeAttribute("data-transition-source");
       });
-    }, 820);
+    }, 620);
     return () => window.clearTimeout(revealTimer);
   }, [pathname]);
 
@@ -87,6 +126,8 @@ export function AmbientMotion() {
         <span />
         <span />
         <span />
+        <div className="ambient-motion__aurora" />
+        <div className="ambient-motion__stars" />
         <div className="ambient-motion__scan" />
         <div className="ambient-motion__reticle"><i /><i /><i /></div>
         <div className="ambient-motion__streams">
