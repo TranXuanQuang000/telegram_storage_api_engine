@@ -20,7 +20,7 @@ export function StoryLoadingPreview() {
   const [preview, setPreview] = useState<StoryPreviewData | null>(null);
 
   useEffect(() => {
-    setPreview(readPreview());
+    queueMicrotask(() => setPreview(readPreview()));
   }, []);
 
   if (!preview) {

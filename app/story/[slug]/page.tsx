@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ArrowLeft, ArrowRight, Eye } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronsLeft, Eye } from "lucide-react";
 import { RatingPanel, RatingPanelFallback } from "../../../components/RatingPanel";
 import { SiteHeader } from "../../../components/SiteHeader";
 import { StoryActions } from "../../../components/StoryActions";
@@ -20,6 +20,7 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
   const story = await getStory(slug, { includeExternalRating: false });
   if (!story) notFound();
   const firstReadable = story.latestChapterId;
+  const firstChapter = story.chapters.at(-1) ?? null;
 
   return (
     <div className="app-shell">
@@ -41,6 +42,11 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
                     Đọc chương {story.latestChapter ?? "mới"} <ArrowRight aria-hidden="true" />
                   </Link>
                 ) : <span className="source-warning">Nguồn hiện chưa có chapter API đọc trực tiếp.</span>}
+                {firstChapter ? (
+                  <Link className="button button--paper" href={`/read/${firstChapter.id}?story=${encodeURIComponent(story.slug)}&title=${encodeURIComponent(story.title)}&cover=${encodeURIComponent(story.coverUrl ?? "")}`}>
+                    <ChevronsLeft aria-hidden="true" /> Đọc từ đầu · Chương {firstChapter.number}
+                  </Link>
+                ) : null}
                 <StoryActions story={story} chapterId={firstReadable} />
               </div>
             </div>

@@ -109,6 +109,25 @@ export function ReaderClient({
   }, [chapterId, pages.length]);
 
   useEffect(() => {
+    if (!storySlug) return;
+    try {
+      const stats = JSON.parse(localStorage.getItem("muc:story-stats") ?? "[]") as Array<{
+        slug: string;
+        opens: number;
+        lastOpenedAt: string;
+      }>;
+      const previous = stats.find((item) => item.slug === storySlug);
+      const next = [
+        { slug: storySlug, opens: (previous?.opens ?? 0) + 1, lastOpenedAt: new Date().toISOString() },
+        ...stats.filter((item) => item.slug !== storySlug),
+      ].slice(0, 200);
+      localStorage.setItem("muc:story-stats", JSON.stringify(next));
+    } catch {
+      // Personal ranking remains optional when storage is unavailable.
+    }
+  }, [chapterId, storySlug]);
+
+  useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
       if (!visible) return;

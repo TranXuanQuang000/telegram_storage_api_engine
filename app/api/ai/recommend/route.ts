@@ -123,6 +123,10 @@ function parseModelRecommendations(raw: string, candidates: AiCandidate[]) {
         score: story.score,
         scoreSource: story.scoreSource,
         scoreKind: story.scoreKind,
+        ratingVotes: story.ratingVotes,
+        positiveRatio: story.positiveRatio,
+        recommendationReason: story.recommendationReason,
+        reviewSignal: story.reviewSignal,
       },
       reason,
       caveat,
@@ -152,6 +156,7 @@ export async function POST(request: NextRequest) {
   const system = [
     "Bạn là thủ thư gợi ý truyện của ứng dụng Mực.",
     "Chỉ được gợi ý tựa có trong danh sách ỨNG VIÊN. Không bịa tựa, điểm, review, tác giả hay tình tiết.",
+    "Thứ tự ưu tiên bắt buộc: (1) thỏa mọi ràng buộc cứng và thể loại bị loại trừ, (2) tương đồng tiền đề/nhân vật/xung đột/nhịp kể, (3) điểm cộng đồng đã xác minh và review được nhiều người đánh giá hữu ích. Không chọn truyện sai yêu cầu chỉ vì nó nổi tiếng.",
     "Khi người dùng hỏi truyện giống hoặc tương tự một tựa cụ thể, hãy so sánh theo tiền đề, kiểu nhân vật chính, xung đột, nhịp kể, sắc thái, tiến trình sức mạnh và quan hệ; không chỉ so thể loại.",
     "Chọn đúng 3 truyện. Trả về duy nhất JSON hợp lệ, không Markdown, theo mẫu: {\"summary\":\"nhận xét ngắn bằng tiếng Việt\",\"recommendations\":[{\"id\":\"id chính xác từ ứng viên\",\"reason\":\"điểm giống về nội dung\",\"caveat\":\"điểm khác hoặc có thể không hợp\"}]}",
     "Không dùng title thay cho id. Giao diện sẽ tự biến id thành thẻ truyện có bìa, điểm và nút mở.",
@@ -170,10 +175,15 @@ export async function POST(request: NextRequest) {
   const historyBlock = context.history.length
     ? `LỊCH SỬ ĐƯỢC NGƯỜI DÙNG CHO PHÉP: ${context.history.map((item) => item.title).join(" · ")}`
     : "KHÔNG GỬI LỊCH SỬ ĐỌC.";
+  const constraintsBlock = `RÀNG BUỘC ĐÃ TRÍCH XUẤT:
+- thể loại bắt buộc=${context.constraints.requiredGenres.join(", ") || "không có"}
+- thể loại phải loại trừ=${context.constraints.excludedGenres.join(", ") || "không có"}
+- trạng thái=${context.constraints.status ?? "không bắt buộc"}
+- người dùng nhấn mạnh chất lượng/review=${context.constraints.qualityRequested ? "có" : "không"}`;
   const candidatesBlock = context.candidates.map((story) =>
-    `- id=${story.id}; title=${story.title}; aliases=${story.originTitle ?? "none"}; genres=${story.genres.join(",")}; tags=${story.discoveryTags.join(",")}; latest=${story.latestChapter ?? "unknown"}; score=${story.score ?? "insufficient"}; synopsis=${story.synopsis ?? "metadata unavailable"}`
+    `- id=${story.id}; title=${story.title}; aliases=${story.originTitle ?? "none"}; genres=${story.genres.join(",")}; tags=${story.discoveryTags.join(",")}; status=${story.status}; latest=${story.latestChapter ?? "unknown"}; verified_score=${story.scoreKind === "community" ? story.score : "not verified"}; rating_votes=${story.ratingVotes ?? 0}; positive_reviews=${story.reviewSignal?.positiveReviewRatio === null || story.reviewSignal?.positiveReviewRatio === undefined ? "insufficient" : `${Math.round(story.reviewSignal.positiveReviewRatio * 100)}%`}; helpful_review_votes=${story.reviewSignal?.helpfulVotes ?? 0}; synopsis=${story.synopsis ?? "metadata unavailable"}`
   ).join("\n");
-  const prompt = `YÊU CẦU: ${parsed.data.query}\n\n${referenceBlock}\n\n${historyBlock}\n\nỨNG VIÊN:\n${candidatesBlock}`;
+  const prompt = `YÊU CẦU: ${parsed.data.query}\n\n${constraintsBlock}\n\n${referenceBlock}\n\n${historyBlock}\n\nỨNG VIÊN ĐÃ QUA BỘ LỌC CỨNG:\n${candidatesBlock}`;
 
   try {
     const rawAnswer = await callProvider(providerResult.data, key, parsed.data.model, system, prompt);
@@ -183,7 +193,7 @@ export async function POST(request: NextRequest) {
       answer: result.summary,
       recommendations: result.recommendations,
       resolvedReference: context.reference
-        ? { title: context.reference.title, slug: context.reference.slug }
+        ? { title: context.reference.title, slug: context.reference.slug, coverUrl: context.reference.coverUrl }
         : null,
       requestedReference: context.requestedReference,
     }, { headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });

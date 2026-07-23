@@ -12,10 +12,19 @@ type Provider = "openai-compatible" | "anthropic" | "gemini";
 const defaults: Record<Provider, string> = { "openai-compatible": "gpt-4.1-mini", anthropic: "claude-3-5-haiku-latest", gemini: "gemini-2.0-flash" };
 
 type AiRecommendation = {
-  story: StoryCardData;
+  story: StoryCardData & {
+    reviewSignal?: {
+      reviewCount: number;
+      positiveReviewRatio: number | null;
+      helpfulApprovalRatio: number | null;
+      helpfulVotes: number;
+    } | null;
+  };
   reason: string;
   caveat: string | null;
 };
+
+type ResolvedReference = { title: string; slug: string; coverUrl: string | null };
 
 export function AiSettings() {
   const [provider, setProvider] = useState<Provider>("openai-compatible");
@@ -27,7 +36,7 @@ export function AiSettings() {
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [answer, setAnswer] = useState("");
   const [recommendations, setRecommendations] = useState<AiRecommendation[]>([]);
-  const [resolvedReference, setResolvedReference] = useState<string | null>(null);
+  const [resolvedReference, setResolvedReference] = useState<ResolvedReference | null>(null);
 
   useEffect(() => {
     const savedProvider = sessionStorage.getItem("muc:ai-provider") as Provider | null;
@@ -61,9 +70,9 @@ export function AiSettings() {
         headers: { "Content-Type": "application/json", "X-AI-Provider": provider, "X-AI-Key": key },
         body: JSON.stringify({ query, history, model }),
       });
-      const data = await response.json() as { answer?: string; error?: string; recommendations?: AiRecommendation[]; resolvedReference?: { title?: string } | null };
+      const data = await response.json() as { answer?: string; error?: string; recommendations?: AiRecommendation[]; resolvedReference?: ResolvedReference | null };
       if (!response.ok) throw new Error(data.error ?? "Không gọi được model");
-      setResolvedReference(data.resolvedReference?.title ?? null);
+      setResolvedReference(data.resolvedReference ?? null);
       setRecommendations(data.recommendations ?? []);
       setAnswer(data.answer ?? "Model chưa trả về lời giải thích."); setState("done");
     } catch (error) { setAnswer(error instanceof Error ? error.message : "Không gọi được model"); setState("error"); }
@@ -85,14 +94,14 @@ export function AiSettings() {
         <div className="privacy-box"><ShieldCheck aria-hidden="true" /><p><strong>Không lưu vào D1/localStorage.</strong><br />Key nằm trong `sessionStorage`, biến mất khi bạn đóng tab. Proxy không ghi request hay Authorization vào log ứng dụng.</p></div>
       </section>
       <section className="ai-playground">
-        <div><p className="section-kicker">Hiểu truyện mẫu · so nội dung</p><h2>Hỏi bằng lời bạn vẫn nói.</h2><p>Mực tự nhận diện tên truyện sau các cụm “giống”, “tương tự”, lấy tóm tắt và tạo danh sách ứng viên có nội dung gần nhất trước khi hỏi model.</p></div>
+        <div><p className="section-kicker">Hiểu truyện mẫu · so nội dung</p><h2>Hỏi bằng lời bạn vẫn nói.</h2><p>Mực lọc ràng buộc trước, rồi xếp lại bằng nội dung, điểm cộng đồng và review hữu ích. Kết quả luôn là truyện thật có bìa và nút mở.</p></div>
         <div className="ai-examples" aria-label="Ví dụ câu hỏi">
           <button type="button" onClick={() => setQuery("Tìm truyện giống Solo Leveling, có tăng tiến sức mạnh rõ nhưng nhân vật chính bớt lạnh lùng.")}>Giống Solo Leveling</button>
           <button type="button" onClick={() => setQuery("Tìm truyện có nội dung tương tự Blue Lock nhưng là môn thể thao khác.")}>Tương tự Blue Lock</button>
           <button type="button" onClick={() => setQuery("Dựa trên lịch sử của tôi, chọn truyện đã hoàn thành và ít romance.")}>Theo lịch sử đọc</button>
         </div>
         <form onSubmit={ask}><textarea value={query} onChange={(event) => setQuery(event.target.value)} maxLength={500} /><button className="button button--ink" type="submit" disabled={!key || state === "loading"}>{state === "loading" ? <LoaderCircle className="spin" aria-hidden="true" /> : <Send aria-hidden="true" />} Hỏi AI</button></form>
-        <div className={`ai-answer ai-answer--${state}`} aria-live="polite">{state === "idle" ? <><Sparkles aria-hidden="true" /><p>Nhập key để thử. Không có key, bộ lọc nâng cao và gợi ý quy tắc vẫn hoạt động bình thường.</p></> : state === "loading" ? <p>Đang nhận diện truyện mẫu, đọc tóm tắt và xếp ứng viên theo nội dung…</p> : <div>{resolvedReference ? <small>Đã nhận diện truyện mẫu: <strong>{resolvedReference}</strong></small> : null}<p>{answer}</p></div>}</div>
+        <div className={`ai-answer ai-answer--${state}`} aria-live="polite">{state === "idle" ? <><Sparkles aria-hidden="true" /><p>Nhập key để thử. Không có key, bộ lọc nâng cao và gợi ý quy tắc vẫn hoạt động bình thường.</p></> : state === "loading" ? <p>Đang lọc điều kiện, đối chiếu điểm và review cộng đồng rồi mới hỏi model…</p> : <div>{resolvedReference ? <Link className="ai-reference-preview" href={`/story/${resolvedReference.slug}`}><StoryCover src={resolvedReference.coverUrl} title={resolvedReference.title} /><small>Đã nhận diện truyện mẫu<br /><strong>{resolvedReference.title}</strong></small></Link> : null}<p>{answer}</p></div>}</div>
         {state === "done" && recommendations.length ? (
           <div className="ai-recommendations" aria-label="Truyện được AI đề xuất">
             {recommendations.map(({ story, reason, caveat }, index) => (
@@ -108,6 +117,8 @@ export function AiSettings() {
                   {caveat ? <small>{caveat}</small> : null}
                   <div className="ai-recommendation-card__meta">
                     {story.score ? <span><Star aria-hidden="true" /> {story.score.toFixed(1)}/5</span> : null}
+                    {story.reviewSignal?.positiveReviewRatio !== null && story.reviewSignal?.positiveReviewRatio !== undefined ? <span>{Math.round(story.reviewSignal.positiveReviewRatio * 100)}% review tích cực</span> : null}
+                    {story.reviewSignal?.helpfulVotes ? <span>{story.reviewSignal.helpfulVotes.toLocaleString("vi-VN")} lượt hữu ích</span> : null}
                     {story.latestChapter ? <span>Ch. {story.latestChapter}</span> : null}
                   </div>
                   <div className="ai-recommendation-card__actions">

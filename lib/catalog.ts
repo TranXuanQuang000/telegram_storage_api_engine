@@ -1,5 +1,5 @@
 import { deriveAutoTags, inferContentRating } from "./auto-tags";
-import { getAniListRatingSignals, getExternalRating } from "./external-ratings";
+import { getAniListRatingSignals, getExternalRating, type RatingSignal } from "./external-ratings";
 import { aggregateRatings, type RatingAggregate } from "./ratings";
 import { normalizeTitle, titleSimilarity } from "./search-utils";
 
@@ -39,6 +39,22 @@ export type CatalogPageData = {
     exactMatch: boolean;
     suggestions: Array<{ slug: string; title: string; similarity: number }>;
   };
+};
+
+export type DiscoverCatalogFilters = {
+  query?: string;
+  page?: number;
+  pageSize?: number;
+  include?: string[];
+  exclude?: string[];
+  status?: string;
+  mood?: string;
+  format?: string;
+  pace?: string;
+  minScore?: number;
+  maxChapters?: number;
+  sort?: string;
+  scanPages?: number;
 };
 
 export type ChapterData = {
@@ -270,10 +286,14 @@ async function fetchJson<T>(url: string, timeoutMs = 5_000, ttlMs = 2 * 60 * 1_0
 
 export async function enrichStoriesWithRatings(stories: StoryCardData[]): Promise<StoryCardData[]> {
   if (!stories.length) return stories;
-  const signals = await getAniListRatingSignals(stories.map((story) => ({
-    id: story.id,
-    titles: ratingTitles(story),
-  })));
+  const requests = stories.map((story) => ({ id: story.id, titles: ratingTitles(story) }));
+  const chunks = Array.from({ length: Math.ceil(requests.length / 20) }, (_, index) => requests.slice(index * 20, index * 20 + 20));
+  const signalEntries: Array<[string, RatingSignal]> = [];
+  for (let index = 0; index < chunks.length; index += 4) {
+    const wave = await Promise.all(chunks.slice(index, index + 4).map((chunk) => getAniListRatingSignals(chunk)));
+    for (const map of wave) signalEntries.push(...map.entries());
+  }
+  const signals = new Map(signalEntries);
   return stories.map((story) => {
     const signal = signals.get(story.id);
     if (!signal) return story;
@@ -439,6 +459,145 @@ export async function getDiscoverCatalog({
   } catch {
     const stories = await searchStories(query, safePage);
     return { stories, page: safePage, pageSize: stories.length || 24, totalItems: stories.length, totalPages: 1, sourceLabel: "Bản dự phòng" };
+  }
+}
+
+function discoverListPath({
+  query,
+  primaryGenre,
+  status,
+  page,
+}: {
+  query: string;
+  primaryGenre?: string;
+  status?: string;
+  page: number;
+}) {
+  if (query.trim()) return `/tim-kiem?keyword=${encodeURIComponent(query.trim())}&page=${page}`;
+  if (primaryGenre && /^[a-z0-9-]{1,80}$/.test(primaryGenre)) return `/the-loai/${primaryGenre}?page=${page}`;
+  if (status === "completed") return `/danh-sach/hoan-thanh?page=${page}`;
+  if (status === "ongoing") return `/danh-sach/dang-phat-hanh?page=${page}`;
+  return `/danh-sach/truyen-moi?page=${page}`;
+}
+
+export async function getFilteredDiscoverCatalog({
+  query = "",
+  page = 1,
+  pageSize = 24,
+  include = [],
+  exclude = [],
+  status,
+  mood = "",
+  format = "",
+  pace = "",
+  minScore = 0,
+  maxChapters = 0,
+  sort = "latest",
+  scanPages = 12,
+}: DiscoverCatalogFilters): Promise<CatalogPageData> {
+  const safePageSize = Math.min(Math.max(Math.floor(pageSize) || 24, 1), 48);
+  const safeScanPages = Math.min(Math.max(Math.floor(scanPages) || 1, 1), 16);
+  const primaryGenre = include[0];
+
+  try {
+    const firstPayload = await fetchJson<OTruyenListPayload>(`${API_BASE}${discoverListPath({ query, primaryGenre, status, page: 1 })}`);
+    const upstreamPagination = firstPayload.data?.params?.pagination;
+    const upstreamPages = (
+      upstreamPagination?.totalPages
+      ?? Math.ceil((upstreamPagination?.totalItems ?? 0) / Math.max(1, upstreamPagination?.totalItemsPerPage ?? 24))
+    ) || 1;
+    const pagesToScan = Math.min(Math.max(upstreamPages, 1), safeScanPages);
+    const remaining = await Promise.allSettled(
+      Array.from({ length: Math.max(0, pagesToScan - 1) }, (_, index) => index + 2)
+        .map((sourcePage) => fetchJson<OTruyenListPayload>(
+          `${API_BASE}${discoverListPath({ query, primaryGenre, status, page: sourcePage })}`,
+          5_000,
+          5 * 60 * 1_000,
+        )),
+    );
+    const payloads = [
+      firstPayload,
+      ...remaining.flatMap((result) => result.status === "fulfilled" ? [result.value] : []),
+    ];
+    let candidates = payloads.flatMap((payload) =>
+      (payload.data?.items ?? []).map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE)),
+    );
+    candidates = [...new Map(candidates.map((story) => [story.id, story])).values()];
+
+    const needsCommunityRating = sort === "rating" || minScore > 0;
+    if (needsCommunityRating) candidates = await enrichStoriesWithRatings(candidates);
+
+    const filtered = candidates.filter((story) => {
+      const tags = new Set([...story.genreSlugs, ...story.discoveryTags]);
+      const includeOkay = include.length === 0 || include.every((slug) => tags.has(slug));
+      const excludeOkay = exclude.every((slug) => !tags.has(slug));
+      const statusOkay = !status || story.status === status;
+      const moodOkay = !mood || tags.has(mood);
+      const formatOkay = !format || tags.has(format);
+      const paceOkay = !pace || tags.has(pace);
+      const scoreOkay = !minScore || (story.score !== null && story.score >= minScore);
+      const chapterCount = Number.parseFloat(story.latestChapter ?? "0");
+      const lengthOkay = !maxChapters || (Number.isFinite(chapterCount) && chapterCount <= maxChapters);
+      return includeOkay && excludeOkay && statusOkay && moodOkay && formatOkay && paceOkay && scoreOkay && lengthOkay;
+    });
+
+    filtered.sort((left, right) => {
+      if (sort === "rating") {
+        const verifiedDifference = Number(right.scoreKind === "community") - Number(left.scoreKind === "community");
+        return verifiedDifference
+          || (right.recommendationScore ?? right.score ?? -1) - (left.recommendationScore ?? left.score ?? -1)
+          || (right.ratingVotes ?? 0) - (left.ratingVotes ?? 0);
+      }
+      if (sort === "relevance" && query) return storySearchSimilarity(query, right) - storySearchSimilarity(query, left);
+      if (sort === "shortest") return Number.parseFloat(left.latestChapter ?? "999999") - Number.parseFloat(right.latestChapter ?? "999999");
+      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+    });
+
+    const totalItems = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
+    const safePage = Math.min(Math.max(Math.floor(page) || 1, 1), totalPages);
+    const offset = (safePage - 1) * safePageSize;
+    let searchNotice: CatalogPageData["searchNotice"];
+    if (query.trim()) {
+      const exactMatch = candidates.some((story) =>
+        normalizeTitle(story.title) === normalizeTitle(query)
+        || Boolean(story.originTitle && normalizeTitle(story.originTitle) === normalizeTitle(query))
+        || storySearchSimilarity(query, story) >= 0.9
+      );
+      if (!exactMatch) {
+        const suggestions = await fuzzyTitleSuggestions(query, candidates);
+        searchNotice = {
+          requestedQuery: query,
+          exactMatch: false,
+          suggestions: suggestions.slice(0, 5).map((story) => ({
+            slug: story.slug,
+            title: story.title,
+            similarity: storySearchSimilarity(query, story),
+          })),
+        };
+      } else {
+        searchNotice = { requestedQuery: query, exactMatch: true, suggestions: [] };
+      }
+    }
+
+    return {
+      stories: filtered.slice(offset, offset + safePageSize),
+      page: safePage,
+      pageSize: safePageSize,
+      totalItems,
+      totalPages,
+      sourceLabel: `Chỉ mục hợp nhất ${candidates.length.toLocaleString("vi-VN")} truyện · lọc trước khi chia trang`,
+      searchNotice,
+    };
+  } catch {
+    const fallback = await getDiscoverCatalog({
+      query,
+      page,
+      primaryGenre,
+      status,
+      enrichRatings: sort === "rating" || minScore > 0,
+    });
+    return { ...fallback, sourceLabel: `${fallback.sourceLabel} · chế độ dự phòng` };
   }
 }
 

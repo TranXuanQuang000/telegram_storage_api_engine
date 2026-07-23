@@ -5,8 +5,8 @@ import { Suspense } from "react";
 import { ArrowRight, RefreshCcw, ShieldCheck, Sparkles } from "lucide-react";
 import { CommunityPicks, CommunityPicksFallback } from "../components/CommunityPicks";
 import { ContinueReading } from "../components/ContinueReading";
+import { PersonalizedHomeShelves } from "../components/PersonalizedHomeShelves";
 import { SiteHeader } from "../components/SiteHeader";
-import { StoryCard } from "../components/StoryCard";
 import { StoryPreviewLink } from "../components/StoryPreviewLink";
 import { getHomeStories } from "../lib/catalog";
 
@@ -17,8 +17,7 @@ export const metadata: Metadata = {
 
 export default async function Home() {
   const stories = await getHomeStories();
-  const latest = stories.slice(0, 8);
-  const spotlight = latest.find((story) => story.latestChapterId) ?? latest[0];
+  const spotlight = stories.find((story) => story.latestChapterId) ?? stories[0];
 
   return (
     <div className="app-shell">
@@ -53,18 +52,7 @@ export default async function Home() {
 
         <div className="page-shell"><ContinueReading /></div>
 
-        <section className="catalog-section page-shell" aria-labelledby="latest-title">
-          <div className="section-heading">
-            <div>
-              <p className="section-kicker">Vừa lên kệ</p>
-              <h2 id="latest-title">Chương mới, còn thơm mùi mực.</h2>
-            </div>
-            <Link className="text-link" href="/discover?sort=latest">Xem tất cả <ArrowRight aria-hidden="true" /></Link>
-          </div>
-          <div className="story-grid">
-            {latest.map((story, index) => <StoryCard key={story.id} story={story} priority={index < 3} />)}
-          </div>
-        </section>
+        <PersonalizedHomeShelves />
 
         <Suspense fallback={<CommunityPicksFallback />}>
           <CommunityPicks />
