@@ -6,10 +6,10 @@ Date: 2026-07-23
 
 - `npx tsc --noEmit`: pass.
 - `npm run lint`: pass with 0 warnings.
-- `npm test`: pass; production build plus 11/11 tests.
+- `npm test`: pass; production build plus 14/14 tests.
 - `npm audit`: pass; 0 known vulnerabilities.
 
-Coverage includes rating aggregation/deduplication/bounds, missing-rating behavior, auto-tags/content rating, Vietnamese title normalization and typo tolerance, AI reference-title extraction, server-rendered home, anonymous public routes, invalid reader input, missing AI configuration, full-cover/font contracts, reader chapter navigation and honest rating-sort/search-correction labels.
+Coverage includes rating aggregation/deduplication/bounds across AniList, Kitsu and MyAnimeList/Jikan, provisional-rating labels, auto-tags/content rating, Vietnamese title normalization and typo tolerance, AI reference-title extraction, AI-to-catalog card mapping, optimistic story previews, server-rendered home, anonymous public routes, invalid reader input, missing AI configuration, full-cover/font contracts, reader chapter navigation and honest rating-sort/search-correction labels.
 
 ## Production-local performance
 
@@ -18,8 +18,8 @@ Measured against the Cloudflare-compatible production bundle on `127.0.0.1`:
 - Home cold: TTFB 0.56s; complete stream 1.05s.
 - Home warm: TTFB 0.04s; complete stream 0.52s.
 - Typo search: TTFB 0.02s; complete stream 1.12s.
-- Rating sort: TTFB 0.03s; complete stream 0.82s.
-- Story detail: main content TTFB 0.70s; external ratings stream independently and completed at 5.42s.
+- Rating sort after cache warm-up: TTFB 0.03s; complete stream 0.63s.
+- Story detail with a cold catalog fetch: server TTFB 1.23s; three-source rating stream completed at 2.13s. Client navigation now shows the stored cover/title/genre/chapter preview immediately during that interval.
 
 The reader progress queue is debounced, deduplicated and stops retrying for anonymous 401/403 responses, eliminating the repeated progress-sync traffic observed before this pass.
 

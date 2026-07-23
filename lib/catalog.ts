@@ -19,6 +19,7 @@ export type StoryCardData = {
   updatedAt: string;
   score: number | null;
   scoreSource: string | null;
+  scoreKind?: "community" | "provisional";
   ratingVotes?: number;
   positiveRatio?: number | null;
   negativeRatio?: number | null;
@@ -120,6 +121,7 @@ const fallbackStories: StoryCardData[] = [
     updatedAt: "2026-07-23T08:00:00Z",
     score: 4.3,
     scoreSource: "AniList · 128K người quan tâm",
+    scoreKind: "community",
   },
   {
     id: "fallback-gachiakuta",
@@ -137,6 +139,7 @@ const fallbackStories: StoryCardData[] = [
     updatedAt: "2026-07-23T07:00:00Z",
     score: 4.05,
     scoreSource: "AniList · 64K người quan tâm",
+    scoreKind: "community",
   },
   {
     id: "fallback-blue-lock",
@@ -154,6 +157,7 @@ const fallbackStories: StoryCardData[] = [
     updatedAt: "2026-07-22T10:00:00Z",
     score: 4.1,
     scoreSource: "AniList · 121K người quan tâm",
+    scoreKind: "community",
   },
 ];
 
@@ -180,10 +184,32 @@ function chapterIdFromUrl(url?: string): string | null {
   return match?.[1] ?? null;
 }
 
+function provisionalCatalogScore(item: OTruyenItem): number {
+  const updatedAt = new Date(item.updatedAt ?? 0).getTime();
+  const ageDays = Number.isFinite(updatedAt) ? Math.max(0, (Date.now() - updatedAt) / 86_400_000) : 365;
+  const latestChapter = Number.parseFloat(item.chaptersLatest?.[0]?.chapter_name ?? "0");
+  const recency = Math.max(0, 0.32 - Math.min(0.32, ageDays * 0.012));
+  const chapterSignal = Number.isFinite(latestChapter) ? Math.min(0.26, Math.log10(latestChapter + 1) * 0.11) : 0;
+  const metadataSignal = Math.min(0.18, (item.category?.length ?? 0) * 0.035)
+    + (item.origin_name?.some(Boolean) ? 0.07 : 0)
+    + (item.chaptersLatest?.length ? 0.08 : 0);
+  const hash = [...(item.slug ?? item.name ?? "")].reduce((total, character) => (total * 31 + character.charCodeAt(0)) % 97, 17);
+  const stableVariation = (hash / 96 - 0.5) * 0.12;
+  return Math.round(Math.min(4.45, Math.max(3.25, 3.35 + recency + chapterSignal + metadataSignal + stableVariation)) * 100) / 100;
+}
+
+function ratingTitles(story: Pick<StoryCardData, "title" | "originTitle">): string[] {
+  return [
+    ...(story.originTitle?.split(/\s*·\s*/).filter(Boolean) ?? []),
+    story.title,
+  ];
+}
+
 function normalizeItem(item: OTruyenItem, cdn = DEFAULT_CDN): StoryCardData {
   const slug = item.slug ?? item._id ?? "khong-ro-ten";
   const latest = item.chaptersLatest?.[0];
   const score = scoreBySlug[slug];
+  const provisionalScore = provisionalCatalogScore(item);
   const genreSlugs = item.category?.map((category) => category.slug).filter(Boolean) as string[] ?? [];
   const discoveryTags = deriveAutoTags(genreSlugs, item.name).map((tag) => tag.slug);
   const coverPath = item.thumb_url?.startsWith("http")
@@ -206,8 +232,9 @@ function normalizeItem(item: OTruyenItem, cdn = DEFAULT_CDN): StoryCardData {
     latestChapter: latest?.chapter_name ?? null,
     latestChapterId: chapterIdFromUrl(latest?.chapter_api_data),
     updatedAt: item.updatedAt ?? new Date(0).toISOString(),
-    score: score?.value ?? null,
-    scoreSource: score?.source ?? null,
+    score: score?.value ?? provisionalScore,
+    scoreSource: score?.source ?? "Điểm Mực tạm tính · độ mới và độ đầy đủ dữ liệu",
+    scoreKind: score ? "community" : "provisional",
   };
 }
 
@@ -245,7 +272,7 @@ export async function enrichStoriesWithRatings(stories: StoryCardData[]): Promis
   if (!stories.length) return stories;
   const signals = await getAniListRatingSignals(stories.map((story) => ({
     id: story.id,
-    titles: [story.title, story.originTitle ?? ""],
+    titles: ratingTitles(story),
   })));
   return stories.map((story) => {
     const signal = signals.get(story.id);
@@ -258,6 +285,7 @@ export async function enrichStoriesWithRatings(stories: StoryCardData[]): Promis
       ...story,
       score: signal.score5,
       scoreSource: `${signal.sourceName} · ${signal.voteCount.toLocaleString("vi-VN")} lượt chấm`,
+      scoreKind: "community",
       ratingVotes: signal.voteCount,
       positiveRatio: signal.positiveRatio,
       negativeRatio: signal.negativeRatio,
@@ -271,12 +299,16 @@ export async function getCommunityRecommendations(): Promise<StoryCardData[]> {
   const latest = await getHomeStories();
   const enriched = await enrichStoriesWithRatings(latest.slice(0, 18));
   const wellRated = enriched
-    .filter((story) => story.score !== null && story.score >= 3.7 && (story.negativeRatio ?? 0) <= 0.18)
+    .filter((story) => story.scoreKind === "community" && story.score !== null && story.score >= 3.7 && (story.negativeRatio ?? 0) <= 0.18)
     .sort((left, right) =>
       (right.recommendationScore ?? right.score ?? 0) - (left.recommendationScore ?? left.score ?? 0)
       || (right.ratingVotes ?? 0) - (left.ratingVotes ?? 0)
     );
-  return (wellRated.length >= 4 ? wellRated : enriched.filter((story) => story.score !== null).sort((left, right) => (right.score ?? 0) - (left.score ?? 0))).slice(0, 6);
+  const verified = enriched
+    .filter((story) => story.scoreKind === "community")
+    .sort((left, right) => (right.score ?? 0) - (left.score ?? 0));
+  const pool = wellRated.length >= 4 ? wellRated : [...wellRated, ...verified.filter((story) => !wellRated.some((rated) => rated.id === story.id))];
+  return pool.slice(0, 6);
 }
 
 export async function getHomeStories(): Promise<StoryCardData[]> {
@@ -424,7 +456,7 @@ export async function getStory(
     const summary = normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE);
     const rating = options.includeExternalRating === false
       ? aggregateRatings([])
-      : await getExternalRating([item.name ?? "", ...(item.origin_name ?? [])]);
+      : await getExternalRating([...(item.origin_name ?? []), item.name ?? ""]);
     const chapterRows = item.chapters?.flatMap((server) => server.server_data ?? []) ?? [];
     const seenChapterNumbers = new Set<string>();
     const chapters = chapterRows
@@ -448,6 +480,7 @@ export async function getStory(
       scoreSource: rating.score5
         ? `${rating.isAggregate ? "Tổng hợp" : "Điểm nguồn"} · ${rating.sources.map((source) => source.sourceName).join(" + ")}`
         : summary.scoreSource,
+      scoreKind: rating.score5 ? "community" : summary.scoreKind,
       latestChapter: chapters[0]?.number ?? summary.latestChapter,
       latestChapterId: chapters[0]?.id ?? summary.latestChapterId,
       synopsis: stripHtml(item.content) || "Nguồn chưa cung cấp tóm tắt cho truyện này.",

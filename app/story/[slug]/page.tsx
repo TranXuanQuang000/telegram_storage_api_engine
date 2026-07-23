@@ -46,7 +46,7 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
             </div>
             <Suspense fallback={<RatingPanelFallback />}>
               <RatingPanel
-                titles={[story.title, story.originTitle ?? ""]}
+                titles={[story.originTitle ?? "", story.title]}
                 sourceUrl={story.sourceUrl}
                 fallbackScore={story.score}
                 fallbackSource={story.scoreSource}

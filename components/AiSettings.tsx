@@ -1,11 +1,21 @@
 "use client";
 
-import { BookOpenCheck, CheckCircle2, Eye, EyeOff, KeyRound, LoaderCircle, Send, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, BookOpen, BookOpenCheck, CheckCircle2, Eye, EyeOff, KeyRound, LoaderCircle, Send, ShieldCheck, Sparkles, Star, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { StoryCardData } from "../lib/catalog";
+import { StoryCover } from "./StoryCover";
+import { StoryPreviewLink } from "./StoryPreviewLink";
 
 type Provider = "openai-compatible" | "anthropic" | "gemini";
 
 const defaults: Record<Provider, string> = { "openai-compatible": "gpt-4.1-mini", anthropic: "claude-3-5-haiku-latest", gemini: "gemini-2.0-flash" };
+
+type AiRecommendation = {
+  story: StoryCardData;
+  reason: string;
+  caveat: string | null;
+};
 
 export function AiSettings() {
   const [provider, setProvider] = useState<Provider>("openai-compatible");
@@ -16,6 +26,7 @@ export function AiSettings() {
   const [includeHistory, setIncludeHistory] = useState(true);
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [answer, setAnswer] = useState("");
+  const [recommendations, setRecommendations] = useState<AiRecommendation[]>([]);
   const [resolvedReference, setResolvedReference] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,14 +40,14 @@ export function AiSettings() {
     });
   }, []);
 
-  function changeProvider(value: Provider) { setProvider(value); setModel(defaults[value]); setAnswer(""); setResolvedReference(null); setState("idle"); }
+  function changeProvider(value: Provider) { setProvider(value); setModel(defaults[value]); setAnswer(""); setRecommendations([]); setResolvedReference(null); setState("idle"); }
   function saveSession() { sessionStorage.setItem("muc:ai-provider", provider); sessionStorage.setItem("muc:ai-model", model); sessionStorage.setItem("muc:ai-key", key); }
-  function clearKey() { sessionStorage.removeItem("muc:ai-key"); setKey(""); setAnswer(""); setResolvedReference(null); setState("idle"); }
+  function clearKey() { sessionStorage.removeItem("muc:ai-key"); setKey(""); setAnswer(""); setRecommendations([]); setResolvedReference(null); setState("idle"); }
 
   async function ask(event: React.FormEvent) {
     event.preventDefault();
     if (!key.trim() || !query.trim()) return;
-    saveSession(); setState("loading"); setAnswer(""); setResolvedReference(null);
+    saveSession(); setState("loading"); setAnswer(""); setRecommendations([]); setResolvedReference(null);
     try {
       let history: Array<{ title: string; storySlug?: string }> = [];
       if (includeHistory) {
@@ -50,9 +61,10 @@ export function AiSettings() {
         headers: { "Content-Type": "application/json", "X-AI-Provider": provider, "X-AI-Key": key },
         body: JSON.stringify({ query, history, model }),
       });
-      const data = await response.json() as { answer?: string; error?: string; resolvedReference?: { title?: string } | null };
+      const data = await response.json() as { answer?: string; error?: string; recommendations?: AiRecommendation[]; resolvedReference?: { title?: string } | null };
       if (!response.ok) throw new Error(data.error ?? "Không gọi được model");
       setResolvedReference(data.resolvedReference?.title ?? null);
+      setRecommendations(data.recommendations ?? []);
       setAnswer(data.answer ?? "Model chưa trả về lời giải thích."); setState("done");
     } catch (error) { setAnswer(error instanceof Error ? error.message : "Không gọi được model"); setState("error"); }
   }
@@ -81,6 +93,36 @@ export function AiSettings() {
         </div>
         <form onSubmit={ask}><textarea value={query} onChange={(event) => setQuery(event.target.value)} maxLength={500} /><button className="button button--ink" type="submit" disabled={!key || state === "loading"}>{state === "loading" ? <LoaderCircle className="spin" aria-hidden="true" /> : <Send aria-hidden="true" />} Hỏi AI</button></form>
         <div className={`ai-answer ai-answer--${state}`} aria-live="polite">{state === "idle" ? <><Sparkles aria-hidden="true" /><p>Nhập key để thử. Không có key, bộ lọc nâng cao và gợi ý quy tắc vẫn hoạt động bình thường.</p></> : state === "loading" ? <p>Đang nhận diện truyện mẫu, đọc tóm tắt và xếp ứng viên theo nội dung…</p> : <div>{resolvedReference ? <small>Đã nhận diện truyện mẫu: <strong>{resolvedReference}</strong></small> : null}<p>{answer}</p></div>}</div>
+        {state === "done" && recommendations.length ? (
+          <div className="ai-recommendations" aria-label="Truyện được AI đề xuất">
+            {recommendations.map(({ story, reason, caveat }, index) => (
+              <article className="ai-recommendation-card" key={story.id}>
+                <StoryPreviewLink className="ai-recommendation-card__cover" story={story} aria-label={`Mở ${story.title}`}>
+                  <StoryCover src={story.coverUrl} title={story.title} />
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                </StoryPreviewLink>
+                <div className="ai-recommendation-card__body">
+                  <p className="section-kicker">{story.genres.slice(0, 2).join(" · ") || "Truyện tranh"}</p>
+                  <h3><StoryPreviewLink story={story}>{story.title}</StoryPreviewLink></h3>
+                  <p>{reason}</p>
+                  {caveat ? <small>{caveat}</small> : null}
+                  <div className="ai-recommendation-card__meta">
+                    {story.score ? <span><Star aria-hidden="true" /> {story.score.toFixed(1)}/5</span> : null}
+                    {story.latestChapter ? <span>Ch. {story.latestChapter}</span> : null}
+                  </div>
+                  <div className="ai-recommendation-card__actions">
+                    <StoryPreviewLink story={story}>Xem truyện <ArrowRight aria-hidden="true" /></StoryPreviewLink>
+                    {story.latestChapterId ? (
+                      <Link href={`/read/${story.latestChapterId}?story=${encodeURIComponent(story.slug)}&title=${encodeURIComponent(story.title)}&cover=${encodeURIComponent(story.coverUrl ?? "")}`}>
+                        <BookOpen aria-hidden="true" /> Đọc ngay
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
       </section>
     </div>
   );

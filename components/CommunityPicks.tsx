@@ -20,7 +20,7 @@ export async function CommunityPicks() {
         Mực đối chiếu điểm và phân bố lượt chấm từ các nền tảng truyện như AniList, ưu tiên truyện có điểm cao,
         tỷ lệ đánh giá xấu thấp và đủ số người chấm — không lấy độ nổi tiếng làm điểm chất lượng.
       </p>
-      <div className="community-picks__signal"><TrendingUp aria-hidden="true" /> Tín hiệu được làm mới định kỳ; mở từng truyện để xem nguồn AniList và Kitsu.</div>
+      <div className="community-picks__signal"><TrendingUp aria-hidden="true" /> Tín hiệu được làm mới định kỳ; mở từng truyện để xem AniList, Kitsu và MyAnimeList.</div>
       <div className="story-grid">
         {stories.map((story) => <StoryCard key={story.id} story={story} />)}
       </div>
@@ -33,7 +33,7 @@ export function CommunityPicksFallback() {
     <section className="catalog-section community-picks page-shell" aria-label="Đang tổng hợp đề xuất cộng đồng">
       <div className="community-picks__loading">
         <span />
-        <div><strong>Đang đối chiếu đánh giá cộng đồng…</strong><small>AniList · Kitsu</small></div>
+        <div><strong>Đang đối chiếu đánh giá cộng đồng…</strong><small>AniList · Kitsu · MyAnimeList</small></div>
       </div>
     </section>
   );

@@ -7,6 +7,7 @@ type StoryRow = { id: string; title: string };
 const ratingSources = [
   ["source_anilist", "anilist", "AniList", "https://anilist.co", "Public GraphQL API; aggregate score metadata with attribution and short TTL"],
   ["source_kitsu", "kitsu", "Kitsu", "https://kitsu.io", "Public JSON:API; aggregate score metadata with attribution and short TTL"],
+  ["source_jikan-mal", "jikan-mal", "MyAnimeList (Jikan)", "https://api.jikan.moe", "Read-only Jikan API for public MyAnimeList score metadata; cached and rate-limited"],
 ] as const;
 
 export async function runRatingEnrichment(db: D1Database, requestedLimit = 6): Promise<RatingIngestResult> {

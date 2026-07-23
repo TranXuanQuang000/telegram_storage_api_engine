@@ -7,6 +7,7 @@ import { CommunityPicks, CommunityPicksFallback } from "../components/CommunityP
 import { ContinueReading } from "../components/ContinueReading";
 import { SiteHeader } from "../components/SiteHeader";
 import { StoryCard } from "../components/StoryCard";
+import { StoryPreviewLink } from "../components/StoryPreviewLink";
 import { getHomeStories } from "../lib/catalog";
 
 export const metadata: Metadata = {
@@ -38,14 +39,14 @@ export default async function Home() {
             </div>
           </div>
           {spotlight ? (
-            <Link className="hero-poster" href={`/story/${spotlight.slug}`} aria-label={`Mở ${spotlight.title}`}>
+            <StoryPreviewLink className="hero-poster" story={spotlight} aria-label={`Mở ${spotlight.title}`}>
               {spotlight.coverUrl ? <Image src={spotlight.coverUrl} alt={`Bìa ${spotlight.title}`} fill sizes="(max-width: 767px) 70vw, 20rem" priority unoptimized /> : <span>{spotlight.title}</span>}
               <div className="hero-poster__caption">
                 <span>Mới cập nhật</span>
                 <strong>{spotlight.title}</strong>
                 <small>Chương {spotlight.latestChapter ?? "mới"}</small>
               </div>
-            </Link>
+            </StoryPreviewLink>
           ) : null}
           <div className="hero-ink" aria-hidden="true">MỰC</div>
         </section>

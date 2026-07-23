@@ -26,6 +26,7 @@ const HALF_LIFE_DAYS = 365;
 const sourceReliability: Record<string, number> = {
   anilist: 1,
   kitsu: 0.92,
+  "jikan-mal": 0.96,
 };
 
 function clamp(value: number, min: number, max: number) {

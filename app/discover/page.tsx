@@ -43,7 +43,10 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
     const lengthOkay = !maxChapters || (Number.isFinite(chapterCount) && chapterCount <= maxChapters);
     return includeOkay && excludeOkay && statusOkay && moodOkay && formatOkay && paceOkay && scoreOkay && lengthOkay;
   }).sort((left, right) => {
-    if (sort === "rating") return (right.score ?? -1) - (left.score ?? -1);
+    if (sort === "rating") {
+      const verifiedDifference = Number(right.scoreKind === "community") - Number(left.scoreKind === "community");
+      return verifiedDifference || (right.score ?? -1) - (left.score ?? -1);
+    }
     if (sort === "relevance" && query) {
       const rightSimilarity = Math.max(titleSimilarity(query, right.title), right.originTitle ? titleSimilarity(query, right.originTitle) : 0);
       const leftSimilarity = Math.max(titleSimilarity(query, left.title), left.originTitle ? titleSimilarity(query, left.originTitle) : 0);

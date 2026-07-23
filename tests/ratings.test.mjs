@@ -21,9 +21,10 @@ test("rating aggregation deduplicates sources and produces a bounded five-star s
   const result = aggregateRatings([
     { sourceId: "anilist", sourceName: "AniList", score5: 4.1, voteCount: 37_419, capturedAt: "2026-07-22T00:00:00.000Z", sourceUrl: "https://anilist.co/manga/106130" },
     { sourceId: "kitsu", sourceName: "Kitsu", score5: 4.14, voteCount: 3_664, capturedAt: "2026-07-22T00:00:00.000Z", sourceUrl: "https://kitsu.app/manga/blue-lock" },
+    { sourceId: "jikan-mal", sourceName: "MyAnimeList (Jikan)", score5: 4.08, voteCount: 42_510, capturedAt: "2026-07-22T00:00:00.000Z", sourceUrl: "https://myanimelist.net/manga/114745" },
     { sourceId: "kitsu", sourceName: "Kitsu", score5: 1, voteCount: 1, capturedAt: "2025-01-01T00:00:00.000Z", sourceUrl: "https://example.test/stale" },
   ], now);
-  assert.equal(result.sourceCount, 2);
+  assert.equal(result.sourceCount, 3);
   assert.equal(result.isAggregate, true);
   assert.equal(result.confidence, "high");
   assert.ok(result.score5 >= 4 && result.score5 <= 4.2);
