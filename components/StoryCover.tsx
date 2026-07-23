@@ -14,6 +14,7 @@ export function StoryCover({
   if (src) {
     return (
       <span className={`story-cover ${className}`}>
+        <span className="story-cover__led" aria-hidden="true" />
         <Image
           src={src}
           alt={`Bìa ${title}`}
@@ -29,6 +30,7 @@ export function StoryCover({
 
   return (
     <span className={`story-cover story-cover--fallback ${className}`} role="img" aria-label={`Bìa chữ của ${title}`}>
+      <span className="story-cover__led" aria-hidden="true" />
       <span>{title}</span>
     </span>
   );

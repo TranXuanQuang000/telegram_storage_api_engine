@@ -54,6 +54,7 @@ export function StoryPreviewLink({
     <Link
       {...props}
       href={href}
+      data-neon-transition="story"
       onPointerDown={handlePointerDown}
       onClick={(event) => {
         rememberStory(story);
