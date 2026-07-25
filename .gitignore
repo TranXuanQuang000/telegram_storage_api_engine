@@ -43,3 +43,12 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# Python backend runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.db
+*.db-shm
+*.db-wal

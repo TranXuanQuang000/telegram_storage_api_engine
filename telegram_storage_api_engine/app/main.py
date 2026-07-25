@@ -1,138 +1,98 @@
-import requests
-import logging
-from fastapi import FastAPI, BackgroundTasks, HTTPException
-from fastapi.responses import RedirectResponse
+import hmac
+import os
+import time
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 
-from app.db import init_db, get_chapter_pages_from_db, save_story, save_chapter
-from app.config import TELEGRAM_BOT_TOKEN
-from app.ingest_worker import backup_chapter_to_telegram
-from app.telegram_storage import telegram_storage
-from app.multi_source_fallback import failover_engine
-from app.scrapers.multi_site_scrapers import MasterMultiSourceAggregator
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("api_server")
+from app.api.v1.otruyen import router as otruyen_router
+from app.api.v1.novel import router as novel_router
+from app.api.v1.sources import router as sources_router
 
 app = FastAPI(
-    title="Master TruyenQQ-Style Multi-Source Comic API Engine",
-    description="Hệ thống Backend API tổng hợp truyện từ 5 nguồn lớn (TruyenQQ, Nettruyen, Cuutruyen, MangaDex, OTruyen) lưu vĩnh viễn trên Telegram CDN",
-    version="3.0.0"
+    title="Multi-Source Aggregator API Engine",
+    description="REST API Compatibility Server R3",
+    version="1.0.0",
 )
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://muctruyen.pages.dev,http://localhost:3000",
+    ).split(",")
+    if origin.strip()
+]
+
+# 1. CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Accept", "Authorization", "Content-Type", "X-Muc-Api-Key"],
 )
 
-@app.on_event("startup")
-def on_startup():
-    init_db()
-    logger.info("Khởi tạo Master Multi-Source TruyenQQ Engine thành công!")
+# 2. Response Compression Middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-@app.get("/")
-def root():
+
+# 3. Response Timing Middleware (X-Response-Time-Ms)
+@app.middleware("http")
+async def add_response_time_header(request: Request, call_next):
+    start_time = time.perf_counter()
+    response: Response = await call_next(request)
+    process_time_ms = (time.perf_counter() - start_time) * 1000
+    response.headers["X-Response-Time-Ms"] = f"{process_time_ms:.2f}"
+    return response
+
+
+@app.middleware("http")
+async def protect_content_api(request: Request, call_next):
+    expected = os.getenv("MUC_API_TOKEN", "").strip()
+    if expected and request.url.path.startswith("/v1/api/"):
+        bearer = request.headers.get("authorization", "")
+        provided = bearer[7:].strip() if bearer.lower().startswith("bearer ") else request.headers.get("x-muc-api-key", "")
+        if not hmac.compare_digest(provided, expected):
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"status": "error", "message": "Unauthorized API client", "data": None},
+                headers={"Cache-Control": "private, no-store"},
+            )
+    return await call_next(request)
+
+
+# 4. Global Error Handlers
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "status": "error",
+            "message": str(exc) or "Internal Server Error",
+            "data": None,
+        },
+    )
+
+
+# 5. Router Inclusions
+app.include_router(otruyen_router, prefix="/v1/api", tags=["OTruyen Comic API"])
+app.include_router(novel_router, prefix="/v1/api", tags=["Novel API Extension"])
+app.include_router(sources_router, prefix="/v1/api", tags=["Source Registry"])
+
+
+@app.get("/health")
+async def health_check():
     return {
-        "status": "online",
-        "service": "Master TruyenQQ-Style Multi-Source API Engine",
-        "version": "3.0.0",
-        "active_sources": ["TruyenQQ", "Nettruyen", "Cuutruyen", "MangaDex", "OTruyen API"],
-        "storage": "Telegram Channel Permanent Storage",
-        "docs_url": "/docs"
+        "status": "ok",
+        "service": "aggregator-api-engine",
+        "version": "1.1.0",
+        "capabilities": {
+            "comic_drop_in": True,
+            "novel_api": True,
+            "adaptive_source_selection": True,
+            "telegram_storage": False,
+            "api_token": bool(os.getenv("MUC_API_TOKEN", "").strip()),
+        },
     }
-
-# ---------------------------------------------------------
-# 1. API TRANG CHỦ & DANH SÁCH GỘP TỪ 5 NGUỒN CHÍNH (TRUYENQQ STYLE)
-# ---------------------------------------------------------
-
-@app.get("/v1/api/danh-sach/truyen-moi")
-def get_latest_stories(page: int = 1):
-    """
-    Lấy danh sách truyện mới được gộp tự động từ 5 NGUỒN CẠNH TRANH TRUYENQQ:
-    TruyenQQ + Nettruyen + Cuutruyen + MangaDex + OTruyen API.
-    """
-    return MasterMultiSourceAggregator.get_aggregated_latest(page)
-
-@app.get("/v1/api/truyen-tranh/{slug}")
-def get_story_detail(slug: str, background_tasks: BackgroundTasks):
-    """
-    Lấy chi tiết truyện sử dụng Failover Engine đa nguồn.
-    """
-    story_data = failover_engine.fetch_story_detail(slug)
-    if not story_data:
-        raise HTTPException(status_code=404, detail="Không tìm thấy truyện ở bất kỳ nguồn nào!")
-    
-    item = story_data.get("data", {}).get("item", {})
-    if item:
-        save_story(
-            slug=item.get("slug", slug),
-            title=item.get("name", ""),
-            thumb_url=item.get("thumb_url", ""),
-            status=item.get("status", "ongoing"),
-            summary=item.get("content", "")
-        )
-        chapters = item.get("chapters", [])
-        for server in chapters:
-            for chap in server.get("server_data", []):
-                chap_name = chap.get("chapter_name", "")
-                chap_id = f"{slug}-chap-{chap_name}"
-                save_chapter(chap_id, slug, chap_name, chap.get("chapter_title", ""))
-
-    return story_data
-
-@app.get("/v1/api/chapter/{chapter_id:path}")
-def get_chapter_pages(chapter_id: str, background_tasks: BackgroundTasks):
-    """
-    Lấy danh sách trang ảnh của chapter.
-    ƯU TIÊN 1: Telegram Permanent Storage (Link Telegram CDN vĩnh viễn không bao giờ lỗi!).
-    ƯU TIÊN 2: Nguồn gốc + Tự động Upload sang Telegram cho lần đọc tiếp theo.
-    """
-    cached_pages = get_chapter_pages_from_db(chapter_id)
-    if cached_pages:
-        logger.info(f"⚡ Trả về Chapter [{chapter_id}] từ Telegram Permanent Storage!")
-        return {
-            "status": "success",
-            "source": "telegram_storage_permanent",
-            "data": {
-                "domain_cdn": "",
-                "item": {
-                    "chapter_path": "",
-                    "chapter_image": [
-                        {
-                            "image_page": page["page_no"],
-                            "image_file": f"/v1/storage/tg/{page['tg_file_id']}"
-                        }
-                        for page in cached_pages
-                    ]
-                }
-            }
-        }
-
-    clean_id = chapter_id.replace("v1/api/chapter/", "")
-    chapter_api_url = f"/v1/api/chapter/{clean_id}"
-    
-    chapter_data = failover_engine.fetch_chapter_pages(clean_id, chapter_api_url)
-    if chapter_data:
-        background_tasks.add_task(backup_chapter_to_telegram, clean_id, chapter_api_url)
-        return chapter_data
-
-    raise HTTPException(status_code=502, detail="Tất cả các nguồn chapter đều gặp sự cố!")
-
-# ---------------------------------------------------------
-# 2. TELEGRAM CDN STORAGE PROXY ENDPOINT
-# ---------------------------------------------------------
-
-@app.get("/v1/storage/tg/{file_id}")
-def proxy_telegram_image(file_id: str):
-    """
-    Proxy trả ảnh trực tiếp từ Telegram CDN vĩnh viễn.
-    """
-    file_path = telegram_storage.get_file_path(file_id)
-    if not file_path or not TELEGRAM_BOT_TOKEN:
-        raise HTTPException(status_code=404, detail="Không tìm thấy file trên Telegram Storage")
-
-    cdn_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
-    return RedirectResponse(url=cdn_url, status_code=307)

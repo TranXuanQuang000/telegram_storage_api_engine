@@ -494,3 +494,22 @@ async def test_optional_api_token_protects_content_but_not_health(monkeypatch):
     assert authenticated.status_code == 200
     assert health.status_code == 200
     assert health.json()["capabilities"]["api_token"] is True
+
+
+@pytest.mark.asyncio
+async def test_auto_source_is_default_and_exposes_selection_provenance():
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        detail = await client.get("/v1/api/truyen-tranh/one-piece")
+        health = await client.get("/v1/api/sources/health")
+
+    assert detail.status_code == 200
+    selection = detail.json()["data"]["item"]["source_selection"]
+    assert selection["mode"] == "auto"
+    assert selection["selected_source"] == "otruyen"
+    assert "chapter_coverage" in selection["selection_policy"]
+    assert health.status_code == 200
+    assert health.json()["data"]["policy"] == (
+        "health+latency+freshness+coverage+completeness"
+    )

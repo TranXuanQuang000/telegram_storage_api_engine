@@ -91,6 +91,8 @@ async def health_check():
         "capabilities": {
             "comic_drop_in": True,
             "novel_api": True,
+            "adaptive_source_selection": True,
+            "telegram_storage": False,
             "api_token": bool(os.getenv("MUC_API_TOKEN", "").strip()),
         },
     }
