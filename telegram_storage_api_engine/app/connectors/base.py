@@ -64,6 +64,12 @@ class BaseConnector(ABC):
                     attempt += 1
                     await asyncio.sleep(min(delay, 5.0))
                     continue
+                content_type = response.headers.get("content-type", "").lower()
+                if "text/html" in content_type and (
+                    response.encoding is None
+                    or response.encoding.lower() in {"iso-8859-1", "latin-1"}
+                ):
+                    response.encoding = "utf-8"
                 return response
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 if attempt < max_retries:
