@@ -47,6 +47,10 @@ class AggregatorService:
         self.merger = SmartChapterMerger()
         self.cleaner = NovelTextCleaner()
         self.selector = AdaptiveSourceSelector()
+        self.source_operation_timeout = max(
+            3.0,
+            min(float(os.getenv("SOURCE_OPERATION_TIMEOUT_SECONDS", "9")), 30.0),
+        )
         
         self.cache_max_entries = max(32, min(int(os.getenv("CACHE_MAX_ENTRIES", "512")), 4096))
         self._cache: "OrderedDict[str, CacheEntry]" = OrderedDict()
@@ -88,7 +92,9 @@ class AggregatorService:
             raise RuntimeError(f"Source circuit is open: {source_id}")
         started = time.perf_counter()
         try:
-            value = await operation()
+            value = await asyncio.wait_for(
+                operation(), timeout=self.source_operation_timeout
+            )
         except Exception:
             self.selector.record_failure(source_id)
             raise
