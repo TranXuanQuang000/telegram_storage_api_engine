@@ -13,6 +13,10 @@ class OTruyenConnector(BaseConnector):
     source_id = "otruyen"
     source_name = "OTruyen"
     base_url = os.getenv("OTRUYEN_UPSTREAM_URL", "https://otruyenapi.com/v1/api").rstrip("/")
+    chapter_base_url = os.getenv(
+        "OTRUYEN_CHAPTER_URL",
+        "https://sv1.otruyencdn.com/v1/api/chapter",
+    ).rstrip("/")
     medium = StoryMedium.COMIC
 
     def _clean_html(self, text: Optional[str]) -> Optional[str]:
@@ -190,7 +194,7 @@ class OTruyenConnector(BaseConnector):
         if chapter_identifier.startswith("http://") or chapter_identifier.startswith("https://"):
             url = chapter_identifier
         else:
-            url = f"{self.base_url}/chapter/{chapter_identifier}"
+            url = f"{self.chapter_base_url}/{chapter_identifier}"
 
         response = await self.get(url)
         response.raise_for_status()

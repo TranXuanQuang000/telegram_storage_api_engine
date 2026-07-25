@@ -134,7 +134,10 @@ def api_mock_handler(request: httpx.Request) -> httpx.Response:
         }
         return httpx.Response(200, json=data)
 
-    if "otruyenapi.com/v1/api/chapter/ch1" in url_str:
+    if (
+        "otruyenapi.com/v1/api/chapter/ch1" in url_str
+        or "sv1.otruyencdn.com/v1/api/chapter/ch1" in url_str
+    ):
         data = {
             "status": "success",
             "message": "",
