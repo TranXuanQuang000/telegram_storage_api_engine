@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import time
 from collections import OrderedDict
 from datetime import datetime
@@ -95,6 +96,15 @@ class AggregatorService:
             value = await asyncio.wait_for(
                 operation(), timeout=self.source_operation_timeout
             )
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if 400 <= status_code < 500 and status_code != 429:
+                self.selector.record_success(
+                    source_id, (time.perf_counter() - started) * 1000
+                )
+            else:
+                self.selector.record_failure(source_id)
+            raise
         except Exception:
             self.selector.record_failure(source_id)
             raise
@@ -277,18 +287,34 @@ class AggregatorService:
         if cached is not None:
             return cached
 
-        o_task = asyncio.create_task(
-            self._fetch_with_health(
-                "otruyen", lambda: self.otruyen_connector.fetch_story(identifier)
+        manga_dex_uuid = bool(
+            re.fullmatch(
+                r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
+                r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}",
+                identifier,
             )
         )
-        md_direct_task = asyncio.create_task(
-            self._fetch_with_health(
-                "mangadex",
-                lambda: self.comic_connectors["mangadex"].fetch_story(identifier),
-            )
-        )
-        direct = await asyncio.gather(o_task, md_direct_task, return_exceptions=True)
+        if manga_dex_uuid:
+            tasks = [
+                asyncio.create_task(
+                    self._fetch_with_health(
+                        "mangadex",
+                        lambda: self.comic_connectors["mangadex"].fetch_story(
+                            identifier
+                        ),
+                    )
+                )
+            ]
+        else:
+            tasks = [
+                asyncio.create_task(
+                    self._fetch_with_health(
+                        "otruyen",
+                        lambda: self.otruyen_connector.fetch_story(identifier),
+                    )
+                )
+            ]
+        direct = await asyncio.gather(*tasks, return_exceptions=True)
         candidates = [item for item in direct if isinstance(item, Story)]
         if not candidates:
             raise ValueError(f"Comic '{identifier}' not found in enabled public sources")
