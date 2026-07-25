@@ -299,12 +299,25 @@ async function getWikisourceNovelCatalog(): Promise<NovelSummary[]> {
 }
 
 export async function getNovelCatalog(): Promise<NovelSummary[]> {
-  const [remote, wikisource] = await Promise.allSettled([
-    getNovelApiCatalog(),
-    getWikisourceNovelCatalog(),
+  const within = async <T,>(promise: Promise<T>, timeoutMs: number, fallback: T) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((resolve) => {
+          timer = setTimeout(() => resolve(fallback), timeoutMs);
+        }),
+      ]);
+    } catch {
+      return fallback;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+  const [remoteItems, wikiItems] = await Promise.all([
+    within(getNovelApiCatalog(), 5_500, []),
+    within(getWikisourceNovelCatalog(), 2_200, PUBLIC_DOMAIN_NOVELS),
   ]);
-  const remoteItems = remote.status === "fulfilled" ? remote.value : [];
-  const wikiItems = wikisource.status === "fulfilled" ? wikisource.value : PUBLIC_DOMAIN_NOVELS;
   return [
     ...remoteItems,
     ...wikiItems,

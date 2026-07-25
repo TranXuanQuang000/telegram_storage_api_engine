@@ -49,7 +49,7 @@ class AggregatorService:
         self.selector = AdaptiveSourceSelector()
         self.source_operation_timeout = max(
             3.0,
-            min(float(os.getenv("SOURCE_OPERATION_TIMEOUT_SECONDS", "9")), 30.0),
+            min(float(os.getenv("SOURCE_OPERATION_TIMEOUT_SECONDS", "5")), 30.0),
         )
         
         self.cache_max_entries = max(32, min(int(os.getenv("CACHE_MAX_ENTRIES", "512")), 4096))

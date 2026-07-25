@@ -144,8 +144,9 @@ function mapRemoteSummary(item: RemoteNovelItem, fallbackSource: string): NovelS
 export async function getNovelApiCatalog() {
   const { baseUrl, novelSources, novelScanPages } = getContentApiConfiguration();
   if (!baseUrl || !novelSources.length) return [];
-  const requests = novelSources.flatMap((source) =>
-    Array.from({ length: novelScanPages }, (_, index) => ({ source, page: index + 1 }))
+  const requests = Array.from(
+    { length: novelScanPages },
+    (_, index) => ({ source: "auto", page: index + 1 }),
   );
   const settled = await Promise.allSettled(requests.map(async ({ source, page }) => {
     const payload = await fetchRemoteJson<{ data?: { items?: RemoteNovelItem[] } }>(
@@ -153,7 +154,7 @@ export async function getNovelApiCatalog() {
       10 * 60 * 1_000,
     );
     return (payload.data?.items ?? [])
-      .map((item) => mapRemoteSummary(item, source))
+      .map((item) => mapRemoteSummary(item, item.source ?? source))
       .filter((item): item is NovelSummary => Boolean(item));
   }));
   const items = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
