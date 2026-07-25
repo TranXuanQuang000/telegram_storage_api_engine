@@ -6,9 +6,6 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger("multi_source_fallback")
 
 class MultiSourceFailoverEngine:
-    """
-    Hệ thống Tự động Chuyển Nguồn Dự Phòng khi Nguồn Chính gặp Lỗi (Fault-Tolerant Multi-Source Engine).
-    """
     def __init__(self):
         self.degraded_sources: Dict[str, float] = {}
 
@@ -25,10 +22,6 @@ class MultiSourceFailoverEngine:
         self.degraded_sources[source_id] = time.time()
 
     def fetch_story_detail(self, slug: str) -> Optional[Dict[str, Any]]:
-        """
-        Lấy chi tiết truyện với cơ chế Chuyển Nguồn Tự Động khi lỗi.
-        Thử: 1. OTruyen API -> 2. MangaDex API
-        """
         if self.is_source_healthy("otruyen"):
             try:
                 res = requests.get(f"https://otruyenapi.com/v1/api/truyen-tranh/{slug}", timeout=6)
@@ -81,9 +74,6 @@ class MultiSourceFailoverEngine:
         return None
 
     def fetch_chapter_pages(self, chapter_id: str, chapter_api_url: str) -> Optional[Dict[str, Any]]:
-        """
-        Lấy danh sách trang ảnh của chapter với đường dẫn chuẩn từ sv1.otruyencdn.com và otruyenapi.com.
-        """
         clean_id = chapter_id.split("/")[-1]
         urls_to_try = [
             f"https://sv1.otruyencdn.com/v1/api/chapter/{clean_id}",
@@ -100,9 +90,8 @@ class MultiSourceFailoverEngine:
                 res = requests.get(url, timeout=7)
                 if res.status_code == 200:
                     json_data = res.json()
-                    if json_data.get("status") == "success":
-                        logger.info(f"✅ Fetch chapter [{chapter_id}] thành công từ: {url}")
-                        return json_data
+                    logger.info(f"✅ Fetch chapter [{chapter_id}] thành công từ: {url}")
+                    return json_data
             except Exception as e:
                 logger.error(f"Lỗi fetch chapter [{chapter_id}] từ {url}: {e}")
 
