@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { ArrowDown, ArrowRight, Radio, RefreshCcw, ShieldCheck, Sparkles } from "lucide-react";
 import { CommunityPicks, CommunityPicksFallback } from "../components/CommunityPicks";
 import { ContinueReading } from "../components/ContinueReading";
+import { LatestUpdates, LatestUpdatesFallback } from "../components/LatestUpdates";
 import { PersonalizedHomeShelves } from "../components/PersonalizedHomeShelves";
 import { SiteHeader } from "../components/SiteHeader";
 import { StoryPreviewLink } from "../components/StoryPreviewLink";
@@ -15,10 +16,44 @@ export const metadata: Metadata = {
   description: "Một trải nghiệm đọc kinetic: tìm đúng gu, tiếp tục tức thì và để cả giao diện chuyển động theo nhịp cuộn.",
 };
 
-export default async function Home() {
+function HomeSpotlightFallback() {
+  return (
+    <div className="hero-stage" aria-label="Đang nạp truyện nổi bật">
+      <div className="hero-orbit" aria-hidden="true"><span /><span /><span /></div>
+      <div className="hero-poster hero-poster--loading" aria-hidden="true">
+        <span className="hero-poster__loading-mark">MỰC</span>
+        <div className="hero-poster__caption">
+          <span>SYNCING SIGNAL</span>
+          <strong>Đang bắt nhịp catalog…</strong>
+          <small>THÔNG TIN CƠ BẢN ĐÃ SẴN SÀNG</small>
+        </div>
+      </div>
+      <span className="hero-coordinate">10.823°N<br />106.629°E</span>
+    </div>
+  );
+}
+
+async function HomeSpotlight() {
   const stories = await getHomeStories();
   const spotlight = stories.find((story) => story.latestChapterId) ?? stories[0];
+  if (!spotlight) return <HomeSpotlightFallback />;
+  return (
+    <div className="hero-stage">
+      <div className="hero-orbit" aria-hidden="true"><span /><span /><span /></div>
+      <StoryPreviewLink className="hero-poster" story={spotlight} aria-label={`Mở ${spotlight.title}`}>
+        {spotlight.coverUrl ? <Image src={spotlight.coverUrl} alt={`Bìa ${spotlight.title}`} fill sizes="(max-width: 767px) 70vw, 24rem" priority unoptimized /> : <span>{spotlight.title}</span>}
+        <div className="hero-poster__caption">
+          <span>NOW PULSING</span>
+          <strong>{spotlight.title}</strong>
+          <small>CH. {spotlight.latestChapter ?? "NEW"} · OPEN SIGNAL</small>
+        </div>
+      </StoryPreviewLink>
+      <span className="hero-coordinate">10.823°N<br />106.629°E</span>
+    </div>
+  );
+}
 
+export default function Home() {
   return (
     <div className="app-shell">
       <SiteHeader />
@@ -38,20 +73,7 @@ export default async function Home() {
               <span><ShieldCheck aria-hidden="true" /> AI key không lưu máy chủ</span>
             </div>
           </div>
-          {spotlight ? (
-            <div className="hero-stage">
-              <div className="hero-orbit" aria-hidden="true"><span /><span /><span /></div>
-              <StoryPreviewLink className="hero-poster" story={spotlight} aria-label={`Mở ${spotlight.title}`}>
-                {spotlight.coverUrl ? <Image src={spotlight.coverUrl} alt={`Bìa ${spotlight.title}`} fill sizes="(max-width: 767px) 70vw, 24rem" priority unoptimized /> : <span>{spotlight.title}</span>}
-                <div className="hero-poster__caption">
-                  <span>NOW PULSING</span>
-                  <strong>{spotlight.title}</strong>
-                  <small>CH. {spotlight.latestChapter ?? "NEW"} · OPEN SIGNAL</small>
-                </div>
-              </StoryPreviewLink>
-              <span className="hero-coordinate">10.823°N<br />106.629°E</span>
-            </div>
-          ) : null}
+          <Suspense fallback={<HomeSpotlightFallback />}><HomeSpotlight /></Suspense>
           <a className="hero-scroll" href="#personal-feed"><ArrowDown aria-hidden="true" /> CUỘN ĐỂ ĐỔI NHỊP</a>
           <div className="hero-ink" aria-hidden="true">PULSE</div>
         </section>
@@ -64,6 +86,10 @@ export default async function Home() {
         <div className="page-shell"><ContinueReading /></div>
 
         <div id="personal-feed"><PersonalizedHomeShelves /></div>
+
+        <Suspense fallback={<LatestUpdatesFallback />}>
+          <LatestUpdates />
+        </Suspense>
 
         <Suspense fallback={<CommunityPicksFallback />}>
           <CommunityPicks />

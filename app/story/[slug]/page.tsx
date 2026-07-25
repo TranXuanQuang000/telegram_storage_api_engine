@@ -1,13 +1,16 @@
+import { env } from "cloudflare:workers";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ArrowLeft, ArrowRight, ChevronsLeft, Eye } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronsLeft, ExternalLink, Eye } from "lucide-react";
+import { ChapterList } from "../../../components/ChapterList";
 import { RatingPanel, RatingPanelFallback } from "../../../components/RatingPanel";
 import { SiteHeader } from "../../../components/SiteHeader";
 import { StoryActions } from "../../../components/StoryActions";
 import { StoryCover } from "../../../components/StoryCover";
 import { getStory } from "../../../lib/catalog";
+import { persistOTruyenStorySnapshot } from "../../../lib/d1-story-sync";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -19,6 +22,10 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const story = await getStory(slug, { includeExternalRating: false });
   if (!story) notFound();
+  const runtime = env as unknown as { DB?: D1Database };
+  if (runtime.DB && story.sourceName === "OTruyen API") {
+    await persistOTruyenStorySnapshot(runtime.DB, story).catch(() => false);
+  }
   const firstReadable = story.latestChapterId;
   const firstChapter = story.chapters.at(-1) ?? null;
 
@@ -41,13 +48,17 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
                   <Link className="button button--ink" href={`/read/${firstReadable}?story=${encodeURIComponent(story.slug)}&title=${encodeURIComponent(story.title)}&cover=${encodeURIComponent(story.coverUrl ?? "")}`}>
                     Đọc chương {story.latestChapter ?? "mới"} <ArrowRight aria-hidden="true" />
                   </Link>
-                ) : <span className="source-warning">Nguồn hiện chưa có chapter API đọc trực tiếp.</span>}
+                ) : (
+                  <Link className="button button--ink" href={story.sourceUrl} target="_blank" rel="noreferrer">
+                    Xem tại {story.sourceName} <ExternalLink aria-hidden="true" />
+                  </Link>
+                )}
                 {firstChapter ? (
                   <Link className="button button--paper" href={`/read/${firstChapter.id}?story=${encodeURIComponent(story.slug)}&title=${encodeURIComponent(story.title)}&cover=${encodeURIComponent(story.coverUrl ?? "")}`}>
                     <ChevronsLeft aria-hidden="true" /> Đọc từ đầu · Chương {firstChapter.number}
                   </Link>
                 ) : null}
-                <StoryActions story={story} chapterId={firstReadable} />
+                <StoryActions story={story} chapterId={firstReadable} chapters={story.chapters} />
               </div>
             </div>
             <Suspense fallback={<RatingPanelFallback />}>
@@ -62,18 +73,32 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
         </section>
 
         <section className="chapter-section page-shell" aria-labelledby="chapter-title">
-          <div className="section-heading"><div><p className="section-kicker">Mục lục</p><h2 id="chapter-title">{story.chapters.length.toLocaleString("vi-VN")} chương từ nguồn hiện tại</h2></div><span className="chapter-source"><Eye aria-hidden="true" /> Provenance: OTruyen API</span></div>
-          <ol className="chapter-list">
-            {story.chapters.slice(0, 60).map((chapter, index) => (
-              <li key={chapter.id}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                <Link href={`/read/${chapter.id}?story=${encodeURIComponent(story.slug)}&title=${encodeURIComponent(story.title)}&cover=${encodeURIComponent(story.coverUrl ?? "")}`}>
-                  <strong>Chương {chapter.number}</strong><small>{chapter.title || "Đọc ngay"}</small><ArrowRight aria-hidden="true" />
-                </Link>
-              </li>
-            ))}
-          </ol>
-          {story.chapters.length > 60 ? <p className="chapter-note">Đang hiển thị 60 chương gần nhất. Bộ lọc mục lục đầy đủ sẽ dùng phân trang cursor.</p> : null}
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">Mục lục</p>
+              <h2 id="chapter-title">
+                {story.chapters.length
+                  ? `${story.chapters.length.toLocaleString("vi-VN")} chương từ nguồn hiện tại`
+                  : "Đọc đúng nơi có quyền phân phối."}
+              </h2>
+            </div>
+            <span className="chapter-source"><Eye aria-hidden="true" /> Provenance: {story.sourceName}</span>
+          </div>
+          {story.chapters.length ? (
+            <ChapterList
+              storySlug={story.slug}
+              storyTitle={story.title}
+              coverUrl={story.coverUrl}
+              chapters={story.chapters}
+            />
+          ) : (
+            <div className="empty-state">
+              <p>Mực chỉ lập chỉ mục metadata cho nguồn này và không hotlink ảnh chương. Bạn có thể mở trang gốc để xem bản dịch, nhóm dịch và điều kiện sử dụng đầy đủ.</p>
+              <Link className="button button--paper" href={story.sourceUrl} target="_blank" rel="noreferrer">
+                Mở {story.sourceName} <ExternalLink aria-hidden="true" />
+              </Link>
+            </div>
+          )}
         </section>
       </main>
     </div>

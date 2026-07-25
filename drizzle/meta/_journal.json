@@ -8,6 +8,27 @@
       "when": 1784775431265,
       "tag": "0000_mighty_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784800000000,
+      "tag": "0001_users_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784980000000,
+      "tag": "0002_reader_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784994072252,
+      "tag": "0003_ambitious_sersi",
+      "breakpoints": true
     }
   ]
 }

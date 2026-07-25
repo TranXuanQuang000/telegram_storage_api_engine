@@ -13,6 +13,7 @@ type SavedProgress = {
   storyTitle?: string;
   coverUrl?: string | null;
   updatedAt: string;
+  medium?: "comic" | "novel";
 };
 
 export function ContinueReading() {
@@ -50,16 +51,20 @@ export function ContinueReading() {
   }
 
   const percent = Math.max(1, Math.round(((progress.page + 1) / Math.max(progress.totalPages, 1)) * 100));
+  const isNovel = progress.medium === "novel";
+  const continueHref = isNovel
+    ? `/novels/read/${progress.chapterId}`
+    : `/read/${progress.chapterId}?story=${encodeURIComponent(progress.storySlug ?? "")}&page=${progress.page}&title=${encodeURIComponent(progress.storyTitle ?? "")}&cover=${encodeURIComponent(progress.coverUrl ?? "")}`;
   return (
     <section className="continue-card" aria-labelledby="continue-title">
       <div className="continue-card__visual" style={progress.coverUrl ? { backgroundImage: `url(${progress.coverUrl})` } : undefined} aria-hidden="true" />
       <div className="continue-card__body">
         <p className="section-kicker">RESUME SIGNAL / {percent}%</p>
         <h2 id="continue-title">{progress.storyTitle ?? "Chương đang đọc"}</h2>
-        <p className="continue-card__chapter"><BookOpen aria-hidden="true" /> Chương {progress.chapterName} · Trang {progress.page + 1}/{progress.totalPages}</p>
+        <p className="continue-card__chapter"><BookOpen aria-hidden="true" /> {isNovel ? progress.chapterName : `Chương ${progress.chapterName}`} · {isNovel ? "Đoạn" : "Trang"} {progress.page + 1}/{progress.totalPages}</p>
         <div className="progress-track" aria-label={`Đã đọc ${percent}%`}><span style={{ width: `${percent}%` }} /></div>
         <div className="continue-card__actions">
-          <Link className="button button--ink" href={`/read/${progress.chapterId}?story=${encodeURIComponent(progress.storySlug ?? "")}&title=${encodeURIComponent(progress.storyTitle ?? "")}&cover=${encodeURIComponent(progress.coverUrl ?? "")}`}>
+          <Link className="button button--ink" href={continueHref}>
             Đọc tiếp <ArrowRight aria-hidden="true" />
           </Link>
           <span><Clock3 aria-hidden="true" /> khoảng {Math.max(2, Math.ceil((progress.totalPages - progress.page) * 0.35))} phút còn lại</span>

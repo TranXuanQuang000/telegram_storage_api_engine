@@ -1,5 +1,7 @@
 import { deriveAutoTags, inferContentRating } from "../auto-tags";
 import { provisionalCatalogScore } from "../catalog";
+import { comicApiCandidates, contentApiHeaders, contentApiSourceName, getContentApiConfiguration } from "../content-api";
+import { persistOTruyenStorySnapshot } from "../d1-story-sync";
 
 type SourceCategory = { id?: string; name?: string; slug?: string };
 type SourceItem = {
@@ -12,6 +14,7 @@ type SourceItem = {
   category?: SourceCategory[];
   updatedAt?: string;
   chaptersLatest?: Array<{ chapter_name?: string; chapter_api_data?: string }>;
+  chapters?: Array<{ server_data?: Array<{ chapter_name?: string; chapter_title?: string; chapter_api_data?: string }> }>;
 };
 
 type SourcePayload = {
@@ -39,7 +42,6 @@ export type IngestOptions = {
 };
 
 const SOURCE_ID = "source_otruyen";
-const API_BASE = "https://otruyenapi.com/v1/api";
 const SOURCE_URL = "https://otruyenapi.com";
 
 function normalizedStatus(status?: string): "ongoing" | "completed" | "hiatus" | "cancelled" {
@@ -51,6 +53,21 @@ function latestChapter(item: SourceItem): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function chapterIdFromApiUrl(url?: string) {
+  const raw = url?.match(/\/chapter\/([^/?#]+)/i)?.[1];
+  if (!raw) return null;
+  try {
+    const value = decodeURIComponent(raw);
+    return /^[a-z0-9._~-]{1,240}$/i.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function latestChapterId(item: SourceItem) {
+  return chapterIdFromApiUrl(item.chaptersLatest?.[0]?.chapter_api_data);
+}
+
 function pageFromCursor(cursor?: string | null) {
   const match = cursor?.match(/^page:(\d{1,7})$/);
   return Math.max(1, Number(match?.[1]) || 1);
@@ -60,12 +77,117 @@ async function batchInChunks(db: D1Database, statements: D1PreparedStatement[]) 
   for (let index = 0; index < statements.length; index += 50) await db.batch(statements.slice(index, index + 50));
 }
 
+async function fetchComicPath(path: string, signal: AbortSignal) {
+  let failure: unknown;
+  for (const url of comicApiCandidates(path)) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          ...contentApiHeaders(url),
+          "User-Agent": "MucCatalog/2.0 (+source-attribution)",
+        },
+        signal,
+      });
+      if (response.ok) return response;
+      failure = new Error(`Comic source returned ${response.status}`);
+    } catch (error) {
+      failure = error;
+    }
+  }
+  throw failure instanceof Error ? failure : new Error("Comic source unavailable");
+}
+
 async function fetchPage(page: number) {
-  const response = await fetch(`${API_BASE}/danh-sach/truyen-moi?page=${page}`, {
-    headers: { Accept: "application/json", "User-Agent": "MucCatalog/1.0 (+source-attribution)" },
+  let failure: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    try {
+      const response = await fetchComicPath(`/danh-sach/truyen-moi?page=${page}`, controller.signal);
+      if (!response.ok) throw new Error(`OTruyen page ${page} returned ${response.status}`);
+      return await response.json() as SourcePayload;
+    } catch (error) {
+      failure = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** attempt)));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw failure instanceof Error ? failure : new Error(`OTruyen page ${page} failed`);
+}
+
+async function fetchStory(slug: string) {
+  let failure: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    try {
+      const response = await fetchComicPath(`/truyen-tranh/${slug}`, controller.signal);
+      if (!response.ok) throw new Error(`OTruyen story ${slug} returned ${response.status}`);
+      return await response.json() as { data?: { item?: SourceItem } };
+    } catch (error) {
+      failure = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** attempt)));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw failure instanceof Error ? failure : new Error(`OTruyen story ${slug} failed`);
+}
+
+export async function refreshOTruyenStory(db: D1Database, slug: string) {
+  if (!/^[a-z0-9-]{1,160}$/.test(slug)) return false;
+  const payload = await fetchStory(slug);
+  const item = payload.data?.item;
+  if (!item?._id || !item.slug) return false;
+  const chapterRows = item.chapters?.flatMap((server) => server.server_data ?? []) ?? [];
+  const seen = new Set<string>();
+  const chapters = chapterRows
+    .map((chapter) => ({
+      id: chapterIdFromApiUrl(chapter.chapter_api_data) ?? "",
+      number: chapter.chapter_name ?? "?",
+      title: chapter.chapter_title ?? "",
+      apiUrl: chapter.chapter_api_data ?? "",
+    }))
+    .filter((chapter) => {
+      if (!chapter.id || seen.has(chapter.number)) return false;
+      seen.add(chapter.number);
+      return true;
+    })
+    .sort((left, right) =>
+      (Number.parseFloat(right.number) || 0) - (Number.parseFloat(left.number) || 0)
+      || right.number.localeCompare(left.number, "vi", { numeric: true })
+    );
+  const explicitLatest = item.chaptersLatest?.[0];
+  const fallbackLatest = chapters[0];
+  return await persistOTruyenStorySnapshot(db, {
+    id: item._id,
+    slug: item.slug,
+    latestChapter: explicitLatest?.chapter_name ?? fallbackLatest?.number ?? null,
+    latestChapterId: latestChapterId(item) ?? fallbackLatest?.id ?? null,
+    updatedAt: item.updatedAt ?? new Date().toISOString(),
+    chapters,
   });
-  if (!response.ok) throw new Error(`OTruyen page ${page} returned ${response.status}`);
-  return await response.json() as SourcePayload;
+}
+
+export async function refreshTrackedOTruyenStories(db: D1Database, limit = 18) {
+  const rows = await db.prepare(`
+    SELECT DISTINCT s.slug
+    FROM stories s
+    JOIN source_items si ON si.story_id = s.id AND si.source_id = 'source_otruyen'
+    LEFT JOIN library_entries le ON le.story_id = s.id AND le.followed = 1
+    LEFT JOIN reading_progress rp ON rp.story_id = s.id AND rp.updated_at > datetime('now', '-30 days')
+    WHERE le.story_id IS NOT NULL OR rp.story_id IS NOT NULL
+    ORDER BY COALESCE(si.last_checked_at, '1970-01-01') ASC
+    LIMIT ?
+  `).bind(Math.min(Math.max(limit, 1), 30)).all<{ slug: string }>();
+  const slugs = (rows.results ?? []).map((row) => row.slug);
+  let refreshed = 0;
+  for (let index = 0; index < slugs.length; index += 3) {
+    const wave = await Promise.allSettled(slugs.slice(index, index + 3).map((slug) => refreshOTruyenStory(db, slug)));
+    refreshed += wave.filter((result) => result.status === "fulfilled" && result.value).length;
+  }
+  return refreshed;
 }
 
 export async function runOTruyenIngest(db: D1Database, options: IngestOptions = {}): Promise<IngestResult> {
@@ -73,7 +195,7 @@ export async function runOTruyenIngest(db: D1Database, options: IngestOptions = 
   const latestRun = options.mode === "refresh" || options.cursor
     ? null
     : await db.prepare(
-      "SELECT cursor FROM sync_runs WHERE source_id = ? AND status = 'completed' AND cursor IS NOT NULL ORDER BY finished_at DESC LIMIT 1",
+      "SELECT cursor FROM sync_runs WHERE source_id = ? AND status = 'completed' AND cursor LIKE 'page:%' ORDER BY finished_at DESC LIMIT 1",
     ).bind(SOURCE_ID).first<{ cursor?: string | null }>();
   const startPage = options.mode === "refresh" ? 1 : pageFromCursor(options.cursor ?? latestRun?.cursor);
   const pagesPerRun = Math.min(Math.max(Math.floor(options.pagesPerRun ?? 8), 1), 12);
@@ -90,10 +212,20 @@ export async function runOTruyenIngest(db: D1Database, options: IngestOptions = 
   const remainingPayloads = await Promise.all(pageNumbers.slice(1).map((page) => fetchPage(page)));
   const payloads = [firstPayload, ...remainingPayloads];
   const lastProcessedPage = pageNumbers.at(-1) ?? startPage;
-  const nextCursor = `page:${lastProcessedPage >= totalSourcePages ? 1 : lastProcessedPage + 1}`;
+  const nextCursor = options.mode === "refresh"
+    ? `head:${lastProcessedPage}`
+    : `page:${lastProcessedPage >= totalSourcePages ? 1 : lastProcessedPage + 1}`;
 
   await db.batch([
-    db.prepare("INSERT INTO sources (id, slug, name, base_url, kind, enabled, license_mode, last_sync_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, license_mode = excluded.license_mode").bind(SOURCE_ID, "otruyen", "OTruyen API", SOURCE_URL, "api", 1, "Public API; metadata and source-hosted media with attribution"),
+    db.prepare("INSERT INTO sources (id, slug, name, base_url, kind, enabled, license_mode, last_sync_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET name = excluded.name, base_url = excluded.base_url, enabled = excluded.enabled, license_mode = excluded.license_mode").bind(
+      SOURCE_ID,
+      "otruyen",
+      contentApiSourceName(),
+      getContentApiConfiguration().baseUrl ?? SOURCE_URL,
+      "api",
+      1,
+      "Configured compatibility API; retain per-item provenance and source-hosted media",
+    ),
     db.prepare("INSERT INTO sync_runs (id, source_id, status, cursor, imported, updated, failed, started_at) VALUES (?, ?, 'running', ?, 0, 0, 0, CURRENT_TIMESTAMP)").bind(runId, SOURCE_ID, nextCursor),
   ]);
 
@@ -119,7 +251,7 @@ export async function runOTruyenIngest(db: D1Database, options: IngestOptions = 
       const externalUrl = `https://otruyen.cc/truyen-tranh/${item.slug}`;
       const provisionalScore = provisionalCatalogScore(item);
       statements.push(
-        db.prepare("INSERT INTO stories (id, slug, canonical_title, synopsis, author, status, origin, content_rating, cover_url, latest_chapter, updated_at) VALUES (?, ?, ?, '', NULL, ?, NULL, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET canonical_title = excluded.canonical_title, status = excluded.status, content_rating = excluded.content_rating, cover_url = excluded.cover_url, latest_chapter = excluded.latest_chapter, updated_at = excluded.updated_at").bind(item._id, item.slug, item.name, normalizedStatus(item.status), contentRating, coverUrl, latestChapter(item), item.updatedAt ?? new Date().toISOString()),
+        db.prepare("INSERT INTO stories (id, slug, medium, canonical_title, synopsis, author, status, origin, content_rating, cover_url, latest_chapter, latest_chapter_label, latest_chapter_id, updated_at) VALUES (?, ?, 'comic', ?, '', NULL, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET slug = excluded.slug, canonical_title = excluded.canonical_title, origin = excluded.origin, status = excluded.status, content_rating = excluded.content_rating, cover_url = excluded.cover_url, latest_chapter = excluded.latest_chapter, latest_chapter_label = excluded.latest_chapter_label, latest_chapter_id = excluded.latest_chapter_id, updated_at = excluded.updated_at").bind(item._id, item.slug, item.name, normalizedStatus(item.status), item.origin_name?.filter(Boolean).join(" · ") || null, contentRating, coverUrl, latestChapter(item), item.chaptersLatest?.[0]?.chapter_name ?? null, latestChapterId(item), item.updatedAt ?? new Date().toISOString()),
         db.prepare("INSERT INTO source_items (id, source_id, story_id, external_id, external_url, etag, source_updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?) ON CONFLICT(source_id, external_id) DO UPDATE SET external_url = excluded.external_url, source_updated_at = excluded.source_updated_at").bind(`otruyen_${item._id}`, SOURCE_ID, item._id, item._id, externalUrl, item.updatedAt ?? null),
         db.prepare("INSERT INTO story_scores (story_id, score_5, confidence, source_count, vote_count, computed_at) VALUES (?, ?, 'insufficient', 0, 0, ?) ON CONFLICT(story_id) DO UPDATE SET score_5 = excluded.score_5, computed_at = excluded.computed_at WHERE story_scores.source_count = 0").bind(item._id, provisionalScore, item.updatedAt ?? new Date().toISOString()),
       );

@@ -39,6 +39,7 @@ export type QueryConstraints = {
 
 const genreHints: Array<[RegExp, string]> = [
   [/\b(hành động|action|đánh nhau)\b/i, "action"],
+  [/\b(phiêu lưu|adventure)\b/i, "adventure"],
   [/\b(kỳ ảo|fantasy|phép thuật)\b/i, "fantasy"],
   [/\b(tình cảm|romance|lãng mạn)\b/i, "romance"],
   [/\b(kinh dị|horror|ma quỷ)\b/i, "horror"],
@@ -47,6 +48,17 @@ const genreHints: Array<[RegExp, string]> = [
   [/\b(bí ẩn|mystery|trinh thám)\b/i, "mystery"],
   [/\b(hài|comedy|hài hước)\b/i, "comedy"],
   [/\b(drama|chính kịch)\b/i, "drama"],
+  [/\b(chuyển sinh|tái sinh|reincarnation)\b/i, "chuyen-sinh"],
+  [/\b(xuyên không|isekai)\b/i, "xuyen-khong"],
+  [/\b(cổ đại|historical|lịch sử)\b/i, "historical"],
+  [/\b(tâm lý|psychological)\b/i, "psychological"],
+  [/\b(khoa học viễn tưởng|sci[\s-]?fi)\b/i, "sci-fi"],
+  [/\b(siêu nhiên|supernatural)\b/i, "supernatural"],
+  [/\b(võ thuật|martial arts|tu tiên)\b/i, "martial-arts"],
+  [/\b(đam mỹ|boy'?s love|bl)\b/i, "dam-my"],
+  [/\b(ngôn tình)\b/i, "ngon-tinh"],
+  [/\b(trinh thám|detective)\b/i, "trinh-tham"],
+  [/\b(đời thường|slice of life)\b/i, "slice-of-life"],
 ];
 
 const negativeGenrePatterns: Record<string, RegExp> = {
@@ -59,6 +71,15 @@ const negativeGenrePatterns: Record<string, RegExp> = {
   mystery: /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:bí ẩn|mystery|trinh thám)\b/i,
   comedy: /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:hài|comedy|hài hước)\b/i,
   drama: /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:drama|chính kịch)\b/i,
+  "chuyen-sinh": /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:chuyển sinh|tái sinh)\b/i,
+  "xuyen-khong": /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:xuyên không|isekai)\b/i,
+  psychological: /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:tâm lý|psychological)\b/i,
+  "sci-fi": /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:khoa học viễn tưởng|sci[\s-]?fi)\b/i,
+  supernatural: /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:siêu nhiên|supernatural)\b/i,
+  "martial-arts": /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:võ thuật|tu tiên)\b/i,
+  "dam-my": /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:đam mỹ|boy'?s love|bl)\b/i,
+  "ngon-tinh": /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:ngôn tình)\b/i,
+  "slice-of-life": /\b(ít|không|tránh|bớt)\s+(?:yếu tố\s+)?(?:đời thường|slice of life)\b/i,
 };
 
 export function parseRecommendationConstraints(query: string): QueryConstraints {
@@ -153,6 +174,14 @@ export async function buildAiRecommendationContext(
       && (!constraints.status || story.status === constraints.status);
   });
   pool = await enrichStoriesWithRatings(pool);
+  if (constraints.qualityRequested) {
+    pool = pool.filter((story) =>
+      story.scoreKind === "community"
+      && (story.score ?? 0) >= 3.7
+      && (story.ratingVotes ?? 0) >= 20
+      && (story.negativeRatio ?? 0) <= 0.22
+    );
+  }
 
   const historySlugs = new Set(history.map((item) => item.storySlug).filter(Boolean));
   const initiallyRanked = pool

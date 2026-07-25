@@ -1,6 +1,6 @@
 import { ArrowUpRight, Star } from "lucide-react";
 import type { StoryCardData } from "../lib/catalog";
-import { formatRelativeDate } from "../lib/catalog";
+import { formatRelativeDate } from "../lib/format-relative-date";
 import { StoryCover } from "./StoryCover";
 import { StoryPreviewLink } from "./StoryPreviewLink";
 

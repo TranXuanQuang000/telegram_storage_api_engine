@@ -11,6 +11,10 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "dist/**",
+    ".agents/**",
+    ".wrangler/**",
+    "__pycache__/**",
     "next-env.d.ts",
   ]),
 ]);

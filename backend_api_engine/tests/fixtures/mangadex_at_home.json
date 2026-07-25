@@ -1,0 +1,15 @@
+{
+  "result": "ok",
+  "baseUrl": "https://uploads.mangadex.org",
+  "chapter": {
+    "hash": "hash-safe-1",
+    "data": [
+      "001.jpg",
+      "../private.jpg",
+      "https://example.invalid/injected.jpg"
+    ],
+    "dataSaver": [
+      "001-saver.jpg"
+    ]
+  }
+}

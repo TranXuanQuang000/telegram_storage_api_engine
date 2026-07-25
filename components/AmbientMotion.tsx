@@ -6,9 +6,14 @@ import { useEffect } from "react";
 export function AmbientMotion() {
   const pathname = usePathname();
   const router = useRouter();
+  const readingRoute = pathname.startsWith("/read/") || pathname.startsWith("/novels/read/");
 
   useEffect(() => {
     const root = document.documentElement;
+    if (readingRoute) {
+      root.dataset.motionState = "paused";
+      return () => { delete root.dataset.motionState; };
+    }
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (reduced.matches) return;
 
@@ -23,6 +28,7 @@ export function AmbientMotion() {
     root.dataset.motionQuality = lowPower ? "lite" : "full";
 
     let frame = 0;
+    let scrollFrame = 0;
     let routeTimer = 0;
     let observerFrame = 0;
     function updatePointer(event: PointerEvent) {
@@ -35,8 +41,11 @@ export function AmbientMotion() {
       });
     }
     function updateScroll() {
-      const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-      root.style.setProperty("--scroll-progress", String(Math.min(1, window.scrollY / scrollable)));
+      cancelAnimationFrame(scrollFrame);
+      scrollFrame = requestAnimationFrame(() => {
+        const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+        root.style.setProperty("--scroll-progress", String(Math.min(1, window.scrollY / scrollable)));
+      });
     }
     function updateVisibility() {
       root.dataset.motionState = document.hidden ? "paused" : "running";
@@ -50,7 +59,8 @@ export function AmbientMotion() {
       const destination = new URL(anchor.href, window.location.href);
       const isStoryRoute = anchor.dataset.neonTransition === "story"
         || destination.pathname.startsWith("/story/")
-        || destination.pathname.startsWith("/read/");
+        || destination.pathname.startsWith("/read/")
+        || destination.pathname.startsWith("/novels/");
       if (!isStoryRoute || destination.origin !== window.location.origin || destination.href === window.location.href) return;
 
       event.preventDefault();
@@ -74,16 +84,26 @@ export function AmbientMotion() {
         entry.target.toggleAttribute("data-motion-active", entry.isIntersecting);
       });
     }, { rootMargin: "160px 0px", threshold: 0.01 });
-    function observeNewLeds() {
+    function registerLed(led: HTMLElement) {
+      if (!led.dataset.motionReady) {
+        led.dataset.motionReady = "true";
+        ledObserver.observe(led);
+      }
+    }
+    function observeNewLeds(records?: MutationRecord[]) {
       cancelAnimationFrame(observerFrame);
       observerFrame = requestAnimationFrame(() => {
-        document.querySelectorAll<HTMLElement>(".story-cover__led:not([data-motion-ready])").forEach((led) => {
-          led.dataset.motionReady = "true";
-          ledObserver.observe(led);
-        });
+        if (!records) {
+          document.querySelectorAll<HTMLElement>(".story-cover__led:not([data-motion-ready])").forEach(registerLed);
+        }
+        else records.forEach((record) => record.addedNodes.forEach((node) => {
+          if (!(node instanceof HTMLElement)) return;
+          if (node.matches(".story-cover__led")) registerLed(node);
+          node.querySelectorAll<HTMLElement>(".story-cover__led:not([data-motion-ready])").forEach(registerLed);
+        }));
       });
     }
-    const mutationObserver = new MutationObserver(observeNewLeds);
+    const mutationObserver = new MutationObserver((records) => observeNewLeds(records));
     mutationObserver.observe(document.body, { childList: true, subtree: true });
     observeNewLeds();
 
@@ -95,6 +115,7 @@ export function AmbientMotion() {
     updateVisibility();
     return () => {
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(scrollFrame);
       cancelAnimationFrame(observerFrame);
       window.clearTimeout(routeTimer);
       window.removeEventListener("pointermove", updatePointer);
@@ -106,7 +127,7 @@ export function AmbientMotion() {
       delete root.dataset.motionQuality;
       delete root.dataset.motionState;
     };
-  }, [router]);
+  }, [readingRoute, router]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -121,6 +142,8 @@ export function AmbientMotion() {
     }, 560);
     return () => window.clearTimeout(revealTimer);
   }, [pathname]);
+
+  if (readingRoute) return null;
 
   return (
     <>

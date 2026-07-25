@@ -1,13 +1,18 @@
 import type { CatalogPageData, DiscoverCatalogFilters, StoryCardData } from "./catalog";
+import { normalizeTitle, titleSimilarity } from "./search-utils";
+import { searchMangaDexStories } from "./sources/mangadex";
 
 type StoryRow = {
   id: string;
   slug: string;
   canonical_title: string;
+  origin: string | null;
   status: string;
   content_rating: string;
   cover_url: string | null;
   latest_chapter: number | null;
+  latest_chapter_label: string | null;
+  latest_chapter_id: string | null;
   updated_at: string;
   score_5: number | null;
   source_count: number | null;
@@ -50,13 +55,17 @@ export async function getD1DiscoverCatalog(
 ): Promise<CatalogPageData | null> {
   const indexed = await db.prepare("SELECT COUNT(*) AS count FROM stories").first<{ count: number }>();
   const indexedCount = Number(indexed?.count ?? 0);
-  if (indexedCount < 240) return null;
+  if (indexedCount < 1) return null;
+  const completedGeneration = await db.prepare(
+    "SELECT id FROM sync_runs WHERE source_id = 'source_otruyen' AND status = 'completed' AND cursor = 'page:1' ORDER BY finished_at DESC LIMIT 1",
+  ).first<{ id: string }>();
+  if (!completedGeneration) return null;
 
-  const where: string[] = [];
+  const where: string[] = ["s.medium = 'comic'"];
   const bindings: Array<string | number> = [];
   if (query.trim()) {
-    where.push("LOWER(s.canonical_title) LIKE LOWER(?)");
-    bindings.push(`%${query.trim()}%`);
+    where.push("(LOWER(s.canonical_title) LIKE LOWER(?) OR LOWER(COALESCE(s.origin, '')) LIKE LOWER(?))");
+    bindings.push(`%${query.trim()}%`, `%${query.trim()}%`);
   }
   if (status === "ongoing" || status === "completed" || status === "hiatus" || status === "cancelled") {
     where.push("s.status = ?");
@@ -83,9 +92,9 @@ export async function getD1DiscoverCatalog(
   const countRow = await db.prepare(
     `SELECT COUNT(*) AS count FROM stories s LEFT JOIN story_scores ss ON ss.story_id = s.id ${whereSql}`,
   ).bind(...bindings).first<{ count: number }>();
-  const totalItems = Number(countRow?.count ?? 0);
+  let totalItems = Number(countRow?.count ?? 0);
   const safePageSize = Math.min(Math.max(Math.floor(pageSize) || 24, 1), 48);
-  const totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
+  let totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
   const safePage = Math.min(Math.max(Math.floor(page) || 1, 1), totalPages);
   const offset = (safePage - 1) * safePageSize;
 
@@ -102,8 +111,8 @@ export async function getD1DiscoverCatalog(
 
   const rows = await db.prepare(`
     SELECT
-      s.id, s.slug, s.canonical_title, s.status, s.content_rating, s.cover_url,
-      s.latest_chapter, s.updated_at, ss.score_5, ss.source_count, ss.vote_count,
+      s.id, s.slug, s.canonical_title, s.origin, s.status, s.content_rating, s.cover_url,
+      s.latest_chapter, s.latest_chapter_label, s.latest_chapter_id, s.updated_at, ss.score_5, ss.source_count, ss.vote_count,
       GROUP_CONCAT(DISTINCT CASE WHEN sg.origin = 'source' THEN g.name END) AS genre_names,
       GROUP_CONCAT(DISTINCT CASE WHEN sg.origin = 'source' THEN g.slug END) AS genre_slugs,
       GROUP_CONCAT(DISTINCT g.slug) AS all_tags
@@ -117,22 +126,22 @@ export async function getD1DiscoverCatalog(
     LIMIT ? OFFSET ?
   `).bind(...bindings, ...orderBindings, safePageSize, offset).all<StoryRow>();
 
-  const stories = (rows.results ?? []).map((row): StoryCardData => {
+  let stories = (rows.results ?? []).map((row): StoryCardData => {
     const sourceCount = Number(row.source_count ?? 0);
     const score = row.score_5 === null ? null : Number(row.score_5);
     return {
       id: row.id,
       slug: row.slug,
       title: row.canonical_title,
-      originTitle: null,
+      originTitle: row.origin,
       coverUrl: row.cover_url,
       status: safeStatus(row.status),
       contentRating: safeContentRating(row.content_rating),
       genres: splitAggregate(row.genre_names),
       genreSlugs: splitAggregate(row.genre_slugs),
       discoveryTags: splitAggregate(row.all_tags).filter((tag) => !splitAggregate(row.genre_slugs).includes(tag)),
-      latestChapter: row.latest_chapter === null ? null : String(row.latest_chapter),
-      latestChapterId: null,
+      latestChapter: row.latest_chapter_label ?? (row.latest_chapter === null ? null : String(row.latest_chapter)),
+      latestChapterId: row.latest_chapter_id,
       updatedAt: row.updated_at,
       score,
       scoreSource: sourceCount > 0
@@ -143,12 +152,29 @@ export async function getD1DiscoverCatalog(
     };
   });
 
+  let liveSourceCount = 0;
+  if (query.trim() && safePage === 1) {
+    const mangaDexStories = await searchMangaDexStories(query, safePageSize).catch(() => []);
+    const merged = new Map<string, StoryCardData>();
+    for (const story of [...stories, ...mangaDexStories]) {
+      const key = normalizeTitle(story.title);
+      const existing = merged.get(key);
+      if (!existing || (!existing.latestChapterId && story.latestChapterId)) merged.set(key, story);
+    }
+    liveSourceCount = Math.max(0, merged.size - stories.length);
+    stories = [...merged.values()]
+      .sort((left, right) => titleSimilarity(query, right.title) - titleSimilarity(query, left.title))
+      .slice(0, safePageSize);
+    totalItems += liveSourceCount;
+    totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
+  }
+
   return {
     stories,
     page: safePage,
     pageSize: safePageSize,
     totalItems,
     totalPages,
-    sourceLabel: `D1 · ${indexedCount.toLocaleString("vi-VN")} truyện đã lập chỉ mục · lọc trước khi chia trang`,
+    sourceLabel: `D1 · ${indexedCount.toLocaleString("vi-VN")} truyện đã lập chỉ mục${liveSourceCount ? ` + ${liveSourceCount} kết quả MangaDex trực tiếp` : ""} · lọc trước khi chia trang`,
   };
 }

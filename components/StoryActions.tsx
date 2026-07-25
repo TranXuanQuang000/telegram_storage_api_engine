@@ -1,64 +1,255 @@
 "use client";
 
-import { Bookmark, Check, Download, LoaderCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { BookOpen, Bookmark, Check, Download, LoaderCircle, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { saveChapterOffline } from "../lib/offline-store";
 import type { StoryCardData } from "../lib/catalog";
 
-export function StoryActions({ story, chapterId }: { story: StoryCardData; chapterId: string | null }) {
-  const storyId = story.id;
-  const title = story.title;
+export type StoryChapterItem = {
+  id: string;
+  number: string;
+  title?: string;
+};
+
+export function StoryActions({
+  story,
+  chapterId,
+  chapters = [],
+}: {
+  story: StoryCardData;
+  chapterId: string | null;
+  chapters?: StoryChapterItem[];
+}) {
+  const storyId = story.id || story.slug;
   const [saved, setSaved] = useState(false);
-  const [downloadState, setDownloadState] = useState<"idle" | "working" | "done" | "error">("idle");
+  const [loadingSaved, setLoadingSaved] = useState(true);
+  const [continueHref, setContinueHref] = useState<string | null>(null);
+  const [continueLabel, setContinueLabel] = useState("Đọc tiếp");
+  const [batchState, setBatchState] = useState<{
+    status: "idle" | "working" | "done" | "error" | "cancelled";
+    current: number;
+    total: number;
+    chapterName: string;
+  }>({ status: "idle", current: 0, total: 0, chapterName: "" });
+
+  const cancelBatchRef = useRef(false);
 
   useEffect(() => {
-    let next = false;
-    try {
-      const library = JSON.parse(localStorage.getItem("muc:library") ?? "[]") as string[];
-      next = library.includes(storyId);
-    } catch { next = false; }
-    queueMicrotask(() => setSaved(next));
-  }, [storyId]);
+    queueMicrotask(() => {
+      try {
+        const history = JSON.parse(localStorage.getItem("muc:history") ?? "[]") as Array<{
+          storySlug?: string;
+          chapterId?: string;
+          chapterName?: string;
+          page?: number;
+        }>;
+        const latest = history.find((item) => item.storySlug === story.slug && item.chapterId);
+        if (latest?.chapterId) {
+          const page = Math.max(0, Number(latest.page) || 0);
+          setContinueHref(`/read/${latest.chapterId}?story=${encodeURIComponent(story.slug)}&page=${page}`);
+          setContinueLabel(`Đọc tiếp Ch. ${latest.chapterName ?? "mới"} · trang ${page + 1}`);
+        } else if (chapterId) {
+          setContinueHref(`/read/${chapterId}?story=${encodeURIComponent(story.slug)}`);
+          setContinueLabel(`Đọc chương ${story.latestChapter ?? "mới"}`);
+        }
+      } catch {
+        if (chapterId) setContinueHref(`/read/${chapterId}?story=${encodeURIComponent(story.slug)}`);
+      }
+    });
+  }, [chapterId, story.latestChapter, story.slug]);
 
-  function toggleSaved() {
+  // Lấy trực tiếp trạng thái Tủ truyện từ Tài khoản Server D1
+  useEffect(() => {
+    let active = true;
+    fetch("/api/library")
+      .then(async (res) => (res.ok
+        ? await res.json() as { items?: Array<{ story: { id: string; slug: string } }> }
+        : null))
+      .then((data) => {
+        if (!active || !data?.items) {
+          setLoadingSaved(false);
+          return;
+        }
+        const isSavedOnServer = data.items.some(
+          (item: { story: { id: string; slug: string } }) =>
+            item.story.id === storyId || item.story.slug === story.slug || item.story.id === story.slug
+        );
+        setSaved(isSavedOnServer);
+        setLoadingSaved(false);
+      })
+      .catch(() => {
+        if (active) setLoadingSaved(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [storyId, story.slug]);
+
+  // Lưu hoặc xóa trực tiếp trên Tài khoản Server D1
+  async function toggleSaved() {
+    const nextSaved = !saved;
+    setSaved(nextSaved);
+
     try {
-      const library = new Set(JSON.parse(localStorage.getItem("muc:library") ?? "[]") as string[]);
-      const records = JSON.parse(localStorage.getItem("muc:libraryRecords") ?? "[]") as StoryCardData[];
-      const wasSaved = library.has(storyId);
-      if (wasSaved) library.delete(storyId); else library.add(storyId);
-      localStorage.setItem("muc:library", JSON.stringify([...library]));
-      localStorage.setItem("muc:libraryRecords", JSON.stringify(wasSaved ? records.filter((item) => item.id !== storyId) : [story, ...records.filter((item) => item.id !== storyId)].slice(0, 200)));
-      const nextSaved = library.has(storyId);
-      setSaved(nextSaved);
-      void fetch(nextSaved ? "/api/library" : `/api/library?storyId=${encodeURIComponent(storyId)}`, {
+      const res = await fetch(nextSaved ? "/api/library" : `/api/library?storyId=${encodeURIComponent(storyId)}`, {
         method: nextSaved ? "PUT" : "DELETE",
         headers: nextSaved ? { "Content-Type": "application/json" } : undefined,
-        body: nextSaved ? JSON.stringify({ storyId, status: "reading", followed: true }) : undefined,
-      }).catch(() => undefined);
-    } catch { setSaved((value) => !value); }
+        body: nextSaved
+          ? JSON.stringify({
+              storyId,
+              slug: story.slug,
+              title: story.title,
+              coverUrl: story.coverUrl,
+              status: "reading",
+              followed: true,
+            })
+          : undefined,
+      });
+
+      if (!res.ok) {
+        setSaved(!nextSaved);
+        if (res.status === 401) {
+          if (confirm("Bạn cần đăng nhập tài khoản để lưu truyện vào tủ. Chuyển đến trang Đăng nhập ngay?")) {
+            window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+          }
+        } else {
+          const errData = (await res.json().catch(() => ({}))) as { error?: string };
+          alert(`Không thể ${nextSaved ? "thêm" : "xóa"} tủ truyện: ${errData.error || "Lỗi server"}`);
+        }
+      }
+    } catch {
+      setSaved(!nextSaved);
+      alert("Lỗi kết nối mạng khi cập nhật tủ truyện.");
+    }
   }
 
-  async function download() {
-    if (!chapterId || !("caches" in window)) return;
-    setDownloadState("working");
-    try {
-      const response = await fetch(`/api/download-manifest/${chapterId}`);
-      if (!response.ok) throw new Error("manifest");
-      const manifest = await response.json() as { pages: string[]; estimatedBytes: number };
-      await saveChapterOffline({ storyId: story.slug, title, chapterId, pages: manifest.pages.length, pageUrls: manifest.pages, estimatedBytes: manifest.estimatedBytes });
-      setDownloadState("done");
-    } catch { setDownloadState("error"); }
+  async function downloadAllChapters() {
+    if (!chapters.length || !("caches" in window)) return;
+    cancelBatchRef.current = false;
+    setBatchState({ status: "working", current: 0, total: chapters.length, chapterName: "Chuẩn bị..." });
+
+    let successCount = 0;
+
+    for (let i = 0; i < chapters.length; i++) {
+      if (cancelBatchRef.current) {
+        setBatchState((prev) => ({ ...prev, status: "cancelled" }));
+        return;
+      }
+
+      const ch = chapters[i];
+      setBatchState({
+        status: "working",
+        current: i + 1,
+        total: chapters.length,
+        chapterName: ch.number ? `Chương ${ch.number}` : ch.title || `Tập ${i + 1}`,
+      });
+
+      try {
+        const response = await fetch(`/api/download-manifest/${ch.id}`);
+        if (response.ok) {
+          const manifest = (await response.json()) as { pages: string[]; estimatedBytes: number; version?: string };
+          await saveChapterOffline({
+            storyId: story.slug,
+            title: story.title,
+            coverUrl: story.coverUrl,
+            chapterId: ch.id,
+            chapterName: ch.number || `${i + 1}`,
+            pages: manifest.pages.length,
+            pageUrls: manifest.pages,
+            estimatedBytes: manifest.estimatedBytes,
+            manifestVersion: manifest.version ?? `otruyen-${ch.id}-${manifest.pages.length}`,
+          });
+          successCount++;
+        }
+      } catch {
+        /* Bỏ qua lỗi từng chương, tiếp tục chương tiếp theo */
+      }
+    }
+
+    if (cancelBatchRef.current) {
+      setBatchState((prev) => ({ ...prev, status: "cancelled" }));
+    } else {
+      setBatchState({
+        status: successCount > 0 ? "done" : "error",
+        current: successCount,
+        total: chapters.length,
+        chapterName: successCount > 0 ? `Đã tải ${successCount}/${chapters.length} chương` : "Lỗi khi tải",
+      });
+    }
+  }
+
+  function cancelBatchDownload() {
+    cancelBatchRef.current = true;
   }
 
   return (
-    <div className="story-actions">
-      <button className={`button ${saved ? "button--paper" : "button--ink"}`} type="button" onClick={toggleSaved}>
-        {saved ? <Check aria-hidden="true" /> : <Bookmark aria-hidden="true" />}{saved ? "Đã vào tủ" : "Thêm vào tủ"}
-      </button>
-      <button className="button button--paper" type="button" onClick={download} disabled={!chapterId || downloadState === "working"}>
-        {downloadState === "working" ? <LoaderCircle className="spin" aria-hidden="true" /> : downloadState === "done" ? <Check aria-hidden="true" /> : <Download aria-hidden="true" />}
-        {downloadState === "done" ? "Đã ghim offline" : downloadState === "error" ? "Tải lại" : "Tải chương mới"}
-      </button>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-2">
+        <button
+          className={`button ${saved ? "button--cyan" : "button--paper"}`}
+          type="button"
+          onClick={toggleSaved}
+          disabled={loadingSaved}
+        >
+          {loadingSaved ? (
+            <LoaderCircle className="animate-spin" aria-hidden="true" />
+          ) : saved ? (
+            <Check aria-hidden="true" />
+          ) : (
+            <Bookmark aria-hidden="true" />
+          )}
+          {saved ? "Đã lưu vào tủ" : "Thêm vào tủ"}
+        </button>
+
+        {continueHref ? <Link className="button button--paper" href={continueHref}><BookOpen aria-hidden="true" />{continueLabel}</Link> : null}
+
+        {chapters.length > 0 ? (
+          <button
+            className="button button--paper"
+            type="button"
+            onClick={downloadAllChapters}
+            disabled={batchState.status === "working"}
+          >
+            {batchState.status === "working" ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
+            Tải toàn bộ ({chapters.length} chương)
+          </button>
+        ) : null}
+      </div>
+
+      {/* Thanh tiến trình tải toàn bộ */}
+      {batchState.status !== "idle" ? (
+        <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-700/80 text-xs flex flex-col gap-1.5 mt-1">
+          <div className="flex justify-between items-center text-slate-300">
+            <span className="font-medium text-cyan-400">
+              {batchState.status === "working"
+                ? `Đang tải ${batchState.current}/${batchState.total} (${batchState.chapterName})...`
+                : batchState.status === "done"
+                ? `✅ ${batchState.chapterName}`
+                : batchState.status === "cancelled"
+                ? "⏹️ Đã hủy tải xuống"
+                : "❌ Có lỗi xảy ra khi tải"}
+            </span>
+            {batchState.status === "working" ? (
+              <button
+                type="button"
+                onClick={cancelBatchDownload}
+                className="text-red-400 hover:text-red-300 flex items-center gap-1 font-medium px-2 py-0.5 rounded bg-red-950/40 border border-red-800/40"
+              >
+                <XCircle size={14} /> Hủy tải
+              </button>
+            ) : null}
+          </div>
+          {batchState.status === "working" ? (
+            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-cyan-400 h-full transition-all duration-300 rounded-full"
+                style={{ width: `${Math.round((batchState.current / batchState.total) * 100)}%` }}
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

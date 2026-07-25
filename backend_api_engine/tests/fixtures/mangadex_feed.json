@@ -1,0 +1,18 @@
+{
+  "result": "ok",
+  "total": 1,
+  "limit": 100,
+  "offset": 0,
+  "data": [
+    {
+      "id": "chapter-safe-1",
+      "type": "chapter",
+      "attributes": {
+        "chapter": "1",
+        "title": "Khởi đầu",
+        "translatedLanguage": "vi",
+        "updatedAt": "2026-07-25T00:00:00Z"
+      }
+    }
+  ]
+}

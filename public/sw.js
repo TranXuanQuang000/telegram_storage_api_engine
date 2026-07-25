@@ -1,7 +1,8 @@
-const STATIC_CACHE = "muc-static-v1";
-const PAGE_CACHE = "muc-pages-v1";
-const CHAPTER_CACHE = "muc-chapters-v1";
-const APP_SHELL = ["/", "/discover", "/library", "/downloads", "/offline", "/manifest.webmanifest"];
+const STATIC_CACHE = "muc-static-v3";
+const PAGE_CACHE = "muc-pages-v3";
+const CHAPTER_CACHE = "muc-chapters-v3";
+const READING_CACHE = "muc-reading-v1";
+const APP_SHELL = ["/", "/discover", "/library", "/downloads", "/offline", "/offline-reader.html", "/offline-text-reader.html", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
@@ -9,7 +10,7 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("muc-") && ![STATIC_CACHE, PAGE_CACHE, CHAPTER_CACHE].includes(key)).map((key) => caches.delete(key)))).then(() => self.clients.claim()),
+    caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("muc-") && ![STATIC_CACHE, PAGE_CACHE, CHAPTER_CACHE, READING_CACHE, "muc-chapters-v1"].includes(key)).map((key) => caches.delete(key)))).then(() => self.clients.claim()),
   );
 });
 
@@ -20,6 +21,13 @@ async function networkFirst(request) {
     if (response.ok) cache.put(request, response.clone());
     return response;
   } catch {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/novels/read/")) {
+      return (await caches.match("/offline-text-reader.html")) || new Response("Offline text reader unavailable", { status: 503 });
+    }
+    if (url.pathname.startsWith("/read/")) {
+      return (await caches.match("/offline-reader.html")) || new Response("Offline reader unavailable", { status: 503 });
+    }
     return (await cache.match(request)) || (await caches.match("/offline")) || new Response("Bạn đang offline", { status: 503 });
   }
 }
@@ -38,11 +46,13 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
-  if (url.hostname.endsWith("otruyencdn.com")) {
-    event.respondWith(caches.open(CHAPTER_CACHE).then(async (cache) => (await cache.match(request)) || fetch(request)));
+
+  if (url.origin !== self.location.origin) {
+    event.respondWith(Promise.all([caches.open(CHAPTER_CACHE), caches.open(READING_CACHE)]).then(async ([pinnedCache, readingCache]) =>
+      (await pinnedCache.match(request)) || (await readingCache.match(request)) || fetch(request),
+    ));
     return;
   }
-  if (url.origin !== self.location.origin) return;
   if (request.mode === "navigate") event.respondWith(networkFirst(request));
   else if (url.pathname.startsWith("/assets/") || url.pathname.endsWith(".css") || url.pathname.endsWith(".js") || url.pathname.endsWith(".woff2")) event.respondWith(staleWhileRevalidate(request));
 });
@@ -53,10 +63,11 @@ self.addEventListener("message", (event) => {
 
 function openProgressDatabase() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("muc-reader", 2);
+    const request = indexedDB.open("muc-reader", 4);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains("downloads")) db.createObjectStore("downloads", { keyPath: "chapterId" });
+      if (!db.objectStoreNames.contains("novelDownloads")) db.createObjectStore("novelDownloads", { keyPath: "chapterId" });
       if (!db.objectStoreNames.contains("progressQueue")) db.createObjectStore("progressQueue", { keyPath: "storyId" });
     };
     request.onsuccess = () => resolve(request.result);

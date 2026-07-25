@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#070b12">
+  <title>Mực Chữ · Đọc offline</title>
+  <style>
+    :root{color-scheme:dark;--bg:#070b12;--text:#edf1f5;--muted:#98a4b2;--cyan:#00e5ff;--signal:#c7ff3c;--size:20px;--line:1.85}
+    *{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text)}body{font-family:Georgia,"Times New Roman",serif;min-height:100vh}
+    header,nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);width:min(calc(100% - 1rem),54rem);display:flex;align-items:center;gap:.65rem;padding:.6rem .75rem;border:1px solid #ffffff20;border-radius:1rem;background:#070b12e8;backdrop-filter:blur(16px)}
+    header{top:.5rem}nav{bottom:.5rem;justify-content:space-between}a,button{color:inherit;text-decoration:none;border:0;background:transparent;cursor:pointer}header>a,header>button,nav>a{padding:.5rem .7rem;border:1px solid #ffffff22;border-radius:.65rem}
+    header div{min-width:0;flex:1}header small,header strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}header small{color:var(--muted);font:12px system-ui}header strong{font:700 14px system-ui}
+    main{width:min(calc(100% - 2rem),48rem);margin:auto;padding:6rem 0 7rem;font-size:var(--size);line-height:var(--line)}h1{font:800 clamp(2.5rem,9vw,5rem)/.98 system-ui;margin:.5rem 0 2.5rem}p{margin:0 0 1.15em;text-align:justify;text-wrap:pretty}p:first-of-type:first-letter{float:left;margin:.08em .13em 0 0;color:var(--cyan);font-size:3.7em;font-weight:800;line-height:.8}
+    .source{color:var(--cyan);font:700 11px system-ui;letter-spacing:.12em}.state{min-height:70vh;display:grid;place-content:center;text-align:center}.state p{max-width:34rem;color:var(--muted);text-align:center}
+    nav span{font:700 12px system-ui;color:var(--signal)}.hidden{visibility:hidden;pointer-events:none}
+  </style>
+</head>
+<body>
+  <header><a href="/downloads" aria-label="Danh sách tải">←</a><div><small id="story">MỰC CHỮ OFFLINE</small><strong id="chapter">Đang mở văn bản…</strong></div><button id="font" type="button" aria-label="Đổi cỡ chữ">A±</button><button id="theme" type="button" aria-label="Đổi nền">☾</button></header>
+  <main id="reader"><section class="state"><div><span class="source">ON DEVICE</span><h1>Đang kiểm tra bộ nhớ.</h1></div></section></main>
+  <nav><a id="previous" class="hidden" href="#">← Phần trước</a><span id="progress">0%</span><a id="next" class="hidden" href="#">Phần sau →</a></nav>
+  <script>
+    (() => {
+      const DB_NAME="muc-reader",DB_VERSION=4,STORE="novelDownloads";
+      const reader=document.getElementById("reader");
+      const chapterId=new URLSearchParams(location.search).get("chapter")||decodeURIComponent(location.pathname.match(/\/novels\/read\/([^/?]+)/)?.[1]||"");
+      const escapeText=(value)=>String(value??"").replace(/[&<>"']/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+      const openDb=()=>new Promise((resolve,reject)=>{const request=indexedDB.open(DB_NAME,DB_VERSION);request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains("downloads"))db.createObjectStore("downloads",{keyPath:"chapterId"});if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:"chapterId"});if(!db.objectStoreNames.contains("progressQueue"))db.createObjectStore("progressQueue",{keyPath:"storyId"})};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});
+      const allRecords=async()=>{const db=await openDb();return await new Promise((resolve,reject)=>{const request=db.transaction(STORE,"readonly").objectStore(STORE).getAll();request.onsuccess=()=>{db.close();resolve(request.result||[])};request.onerror=()=>{db.close();reject(request.error)}})};
+      const state=(title,copy)=>{reader.innerHTML=`<section class="state"><div><span class="source">MỰC CHỮ OFFLINE</span><h1>${escapeText(title)}</h1><p>${escapeText(copy)}</p><p><a href="/downloads">← Mở danh sách đã tải</a></p></div></section>`};
+      async function boot(){if(!chapterId)return state("Chưa chọn phần.","Hãy mở mục Tải xuống và chọn một phần truyện chữ đã ghim.");const records=await allRecords();const record=records.find((item)=>item.chapterId===chapterId);if(!record)return state("Không tìm thấy bản tải.","Phần này chưa được lưu trên thiết bị hoặc bộ nhớ trình duyệt đã bị dọn.");document.getElementById("story").textContent=record.title;document.getElementById("chapter").textContent=record.chapterLabel;reader.innerHTML=`<div class="source">MỰC CHỮ · WIKISOURCE · ĐÃ GHIM</div><h1>${escapeText(record.chapterLabel)}</h1>`;record.paragraphs.forEach((text)=>{const p=document.createElement("p");p.textContent=text;reader.append(p)});const same=records.filter((item)=>item.storyId===record.storyId).sort((a,b)=>a.chapterId.localeCompare(b.chapterId,undefined,{numeric:true}));const at=same.findIndex((item)=>item.chapterId===chapterId);[["previous",same[at-1]],["next",same[at+1]]].forEach(([id,item])=>{const link=document.getElementById(id);if(item){link.href=`/offline-text-reader.html?chapter=${encodeURIComponent(item.chapterId)}`;link.classList.remove("hidden")}});addEventListener("scroll",()=>{const max=Math.max(1,document.documentElement.scrollHeight-innerHeight);document.getElementById("progress").textContent=`${Math.round(scrollY/max*100)}%`},{passive:true})}
+      let size=20;document.getElementById("font").onclick=()=>{size=size>=26?17:size+3;document.documentElement.style.setProperty("--size",`${size}px`)};document.getElementById("theme").onclick=()=>{const light=document.documentElement.dataset.theme!=="light";document.documentElement.dataset.theme=light?"light":"dark";document.documentElement.style.setProperty("--bg",light?"#efe4ca":"#070b12");document.documentElement.style.setProperty("--text",light?"#30281f":"#edf1f5")};boot().catch(()=>state("Không mở được bộ nhớ.","Trình duyệt đang chặn IndexedDB."))
+    })();
+  </script>
+</body>
+</html>

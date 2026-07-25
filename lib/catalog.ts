@@ -1,9 +1,13 @@
 import { deriveAutoTags, inferContentRating } from "./auto-tags";
 import { getAniListRatingSignals, getExternalRating, type RatingSignal } from "./external-ratings";
 import { aggregateRatings, type RatingAggregate } from "./ratings";
+import { getCommunityReviewSignals } from "./review-signals";
 import { normalizeTitle, titleSimilarity } from "./search-utils";
+import { getMangaDexLatestStories, getMangaDexStory, searchMangaDexStories } from "./sources/mangadex";
+import { comicApiCandidates, contentApiHeaders, contentApiSourceName, getContentApiConfiguration } from "./content-api";
 
 export type StoryCardData = {
+  medium?: "comic" | "novel";
   id: string;
   slug: string;
   title: string;
@@ -69,6 +73,7 @@ export type StoryDetailData = StoryCardData & {
   authors: string[];
   chapters: ChapterData[];
   sourceUrl: string;
+  sourceName: string;
   rating: RatingAggregate;
 };
 
@@ -84,6 +89,7 @@ type OTruyenChapter = {
   chapter_name?: string;
   chapter_title?: string;
   chapter_api_data?: string;
+  source_name?: string;
 };
 type OTruyenItem = {
   _id?: string;
@@ -98,6 +104,8 @@ type OTruyenItem = {
   content?: string;
   author?: string[];
   chapters?: Array<{ server_data?: OTruyenChapter[] }>;
+  source_name?: string;
+  source_url?: string;
 };
 
 type OTruyenListPayload = {
@@ -109,7 +117,6 @@ type OTruyenListPayload = {
   };
 };
 
-const API_BASE = "https://otruyenapi.com/v1/api";
 const DEFAULT_CDN = "https://img.otruyenapi.com";
 const jsonCache = new Map<string, { expiresAt: number; value?: unknown; pending?: Promise<unknown> }>();
 
@@ -196,10 +203,15 @@ function stripHtml(value?: string): string {
 }
 
 function chapterIdFromUrl(url?: string): string | null {
-  const match = url?.match(/\/chapter\/([a-f0-9]{24})/i);
-  return match?.[1] ?? null;
+  const match = url?.match(/\/chapter\/([^/?#]+)/i);
+  if (!match?.[1]) return null;
+  try {
+    const value = decodeURIComponent(match[1]);
+    return /^[a-z0-9._~-]{1,240}$/i.test(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
-
 export function provisionalCatalogScore(item: OTruyenItem): number {
   const updatedAt = new Date(item.updatedAt ?? 0).getTime();
   const ageDays = Number.isFinite(updatedAt) ? Math.max(0, (Date.now() - updatedAt) / 86_400_000) : 365;
@@ -254,7 +266,12 @@ function normalizeItem(item: OTruyenItem, cdn = DEFAULT_CDN): StoryCardData {
   };
 }
 
-async function fetchJson<T>(url: string, timeoutMs = 5_000, ttlMs = 2 * 60 * 1_000): Promise<T> {
+async function fetchJson<T>(
+  url: string,
+  timeoutMs = 5_000,
+  ttlMs = 2 * 60 * 1_000,
+  headers: Record<string, string> = { Accept: "application/json" },
+): Promise<T> {
   const cached = jsonCache.get(url);
   if (cached && cached.expiresAt > Date.now()) {
     if (cached.value !== undefined) return cached.value as T;
@@ -265,7 +282,7 @@ async function fetchJson<T>(url: string, timeoutMs = 5_000, ttlMs = 2 * 60 * 1_0
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const pending = (async () => {
     const response = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers,
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Source returned ${response.status}`);
@@ -282,6 +299,18 @@ async function fetchJson<T>(url: string, timeoutMs = 5_000, ttlMs = 2 * 60 * 1_0
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchComicJson<T>(path: string, timeoutMs = 5_000, ttlMs = 2 * 60 * 1_000): Promise<T> {
+  let failure: unknown;
+  for (const url of comicApiCandidates(path)) {
+    try {
+      return await fetchJson<T>(url, timeoutMs, ttlMs, contentApiHeaders(url));
+    } catch (error) {
+      failure = error;
+    }
+  }
+  throw failure instanceof Error ? failure : new Error("Comic API is unavailable");
 }
 
 export async function enrichStoriesWithRatings(stories: StoryCardData[]): Promise<StoryCardData[]> {
@@ -316,26 +345,50 @@ export async function enrichStoriesWithRatings(stories: StoryCardData[]): Promis
 }
 
 export async function getCommunityRecommendations(): Promise<StoryCardData[]> {
-  const latest = await getHomeStories();
-  const enriched = await enrichStoriesWithRatings(latest.slice(0, 18));
-  const wellRated = enriched
-    .filter((story) => story.scoreKind === "community" && story.score !== null && story.score >= 3.7 && (story.negativeRatio ?? 0) <= 0.18)
-    .sort((left, right) =>
-      (right.recommendationScore ?? right.score ?? 0) - (left.recommendationScore ?? left.score ?? 0)
-      || (right.ratingVotes ?? 0) - (left.ratingVotes ?? 0)
-    );
+  const [home, pageOne, pageTwo] = await Promise.all([
+    getHomeStories(),
+    getDiscoverCatalog({ page: 1 }).then((page) => page.stories).catch(() => []),
+    getDiscoverCatalog({ page: 2 }).then((page) => page.stories).catch(() => []),
+  ]);
+  const pool = [...new Map([...home, ...pageOne, ...pageTwo].map((story) => [story.id, story])).values()].slice(0, 42);
+  const enriched = await enrichStoriesWithRatings(pool);
   const verified = enriched
-    .filter((story) => story.scoreKind === "community")
-    .sort((left, right) => (right.score ?? 0) - (left.score ?? 0));
-  const pool = wellRated.length >= 4 ? wellRated : [...wellRated, ...verified.filter((story) => !wellRated.some((rated) => rated.id === story.id))];
-  return pool.slice(0, 6);
+    .filter((story) => story.scoreKind === "community" && story.score !== null && (story.ratingVotes ?? 0) >= 10)
+    .sort((left, right) =>
+      (right.score ?? 0) - (left.score ?? 0)
+      || (right.ratingVotes ?? 0) - (left.ratingVotes ?? 0)
+    )
+    .slice(0, 14);
+  const reviewSignals = await getCommunityReviewSignals(verified.map((story) => ({
+    id: story.id,
+    titles: ratingTitles(story),
+  })));
+  const wellRated = enriched
+    .filter((story) => verified.some((candidate) => candidate.id === story.id))
+    .map((story) => {
+      const review = reviewSignals.get(story.id);
+      const reviewPositive = review?.positiveReviewRatio ?? review?.helpfulApprovalRatio ?? null;
+      const quality = (story.score ?? 0) * 18
+        + Math.min(16, Math.log10((story.ratingVotes ?? 0) + 1) * 5)
+        + (review?.qualityScore ?? 0) * .24;
+      return {
+        ...story,
+        recommendationScore: quality,
+        recommendationReason: reviewPositive === null
+          ? `${(story.ratingVotes ?? 0).toLocaleString("vi-VN")} lượt chấm đã xác minh`
+          : `${Math.round(reviewPositive * 100)}% review tích cực`,
+      };
+    })
+    .filter((story) => (story.score ?? 0) >= 3.65)
+    .sort((left, right) => (right.recommendationScore ?? 0) - (left.recommendationScore ?? 0));
+  return wellRated.slice(0, 6);
 }
 
 export async function getHomeStories(): Promise<StoryCardData[]> {
   try {
-    const payload = await fetchJson<{
+    const payload = await fetchComicJson<{
       data?: { items?: OTruyenItem[]; APP_DOMAIN_CDN_IMAGE?: string };
-    }>(`${API_BASE}/home`);
+    }>("/home", 2_500);
     const items = payload.data?.items ?? [];
     if (!items.length) return fallbackStories;
     return items.map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE));
@@ -346,15 +399,47 @@ export async function getHomeStories(): Promise<StoryCardData[]> {
 
 export async function searchStories(query: string, page = 1): Promise<StoryCardData[]> {
   if (!query.trim()) return getHomeStories();
-  try {
-    const payload = await fetchJson<{
+  const [otruyen, mangadex] = await Promise.all([
+    (async () => {
+      try {
+    const payload = await fetchComicJson<{
       data?: { items?: OTruyenItem[]; APP_DOMAIN_CDN_IMAGE?: string };
-    }>(`${API_BASE}/tim-kiem?keyword=${encodeURIComponent(query.trim())}&page=${Math.max(1, page)}`);
+    }>(`/tim-kiem?keyword=${encodeURIComponent(query.trim())}&page=${Math.max(1, page)}`);
     return (payload.data?.items ?? []).map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE));
-  } catch {
-    const lowered = query.toLocaleLowerCase("vi");
-    return fallbackStories.filter((story) => story.title.toLocaleLowerCase("vi").includes(lowered));
+      } catch {
+        const lowered = query.toLocaleLowerCase("vi");
+        return fallbackStories.filter((story) => story.title.toLocaleLowerCase("vi").includes(lowered));
+      }
+    })(),
+    page === 1 ? searchMangaDexStories(query, 20).catch(() => []) : Promise.resolve([]),
+  ]);
+  const merged = new Map<string, StoryCardData>();
+  for (const story of [...otruyen, ...mangadex]) {
+    const key = normalizeTitle(story.title);
+    const existing = merged.get(key);
+    if (!existing || (!existing.latestChapterId && story.latestChapterId)) merged.set(key, story);
   }
+  return [...merged.values()];
+}
+
+export async function getLatestMultiSourceStories(limit = 10): Promise<StoryCardData[]> {
+  const safeLimit = Math.min(Math.max(Math.floor(limit) || 10, 1), 20);
+  const [otruyen, mangadex] = await Promise.all([
+    getDiscoverCatalog({ page: 1 }).then((catalog) => catalog.stories).catch(() => []),
+    getMangaDexLatestStories(safeLimit * 2).catch(() => []),
+  ]);
+  const oTruyenByTitle = new Map(otruyen.map((story) => [normalizeTitle(story.title), story]));
+  const mangaDexUnique = mangadex.filter((story) => !oTruyenByTitle.has(normalizeTitle(story.title)));
+  const oTruyenTarget = Math.min(otruyen.length, Math.ceil(safeLimit * 0.6));
+  const mangaDexTarget = Math.min(mangaDexUnique.length, safeLimit - oTruyenTarget);
+  const selected = [...otruyen.slice(0, oTruyenTarget), ...mangaDexUnique.slice(0, mangaDexTarget)];
+  if (selected.length < safeLimit) {
+    const selectedIds = new Set(selected.map((story) => story.id));
+    selected.push(...[...otruyen, ...mangaDexUnique].filter((story) => !selectedIds.has(story.id)).slice(0, safeLimit - selected.length));
+  }
+  return selected
+    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
+    .slice(0, safeLimit);
 }
 
 function storySearchSimilarity(query: string, story: StoryCardData) {
@@ -367,14 +452,14 @@ async function fuzzyTitleSuggestions(query: string, existing: StoryCardData[]): 
     .filter((token) => token.length >= 3)
     .sort((left, right) => right.length - left.length)
     .slice(0, 2);
-  const urls = [
-    `${API_BASE}/home`,
-    `${API_BASE}/danh-sach/truyen-moi?page=1`,
-    `${API_BASE}/danh-sach/truyen-moi?page=2`,
-    `${API_BASE}/danh-sach/truyen-moi?page=3`,
-    ...queryTokens.map((token) => `${API_BASE}/tim-kiem?keyword=${encodeURIComponent(token)}&page=1`),
+  const paths = [
+    "/home",
+    "/danh-sach/truyen-moi?page=1",
+    "/danh-sach/truyen-moi?page=2",
+    "/danh-sach/truyen-moi?page=3",
+    ...queryTokens.map((token) => `/tim-kiem?keyword=${encodeURIComponent(token)}&page=1`),
   ];
-  const settled = await Promise.allSettled(urls.map((url) => fetchJson<OTruyenListPayload>(url, 4_500, 5 * 60 * 1_000)));
+  const settled = await Promise.allSettled(paths.map((path) => fetchComicJson<OTruyenListPayload>(path, 4_500, 5 * 60 * 1_000)));
   const candidates = [
     ...existing,
     ...settled.flatMap((result) => result.status === "fulfilled"
@@ -411,15 +496,29 @@ export async function getDiscoverCatalog({
   else if (status === "ongoing") path = `/danh-sach/dang-phat-hanh?page=${safePage}`;
 
   try {
-    const payload = await fetchJson<OTruyenListPayload>(`${API_BASE}${path}`);
+    const payload = await fetchComicJson<OTruyenListPayload>(path);
     const pagination = payload.data?.params?.pagination;
     let stories = (payload.data?.items ?? []).map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE));
     const pageSize = pagination?.totalItemsPerPage ?? (stories.length || 24);
     let totalItems = pagination?.totalItems ?? stories.length;
     let totalPages = pagination?.totalPages ?? Math.max(1, Math.ceil(totalItems / pageSize));
-    let sourceLabel = payload.data?.titlePage ?? "OTruyen API";
+    let sourceLabel = payload.data?.titlePage ?? contentApiSourceName();
     let searchNotice: CatalogPageData["searchNotice"];
     if (query.trim()) {
+      if (safePage === 1) {
+        const extra = await searchMangaDexStories(query, pageSize).catch(() => []);
+        const merged = new Map<string, StoryCardData>();
+        for (const story of [...stories, ...extra]) {
+          const key = normalizeTitle(story.title);
+          const existing = merged.get(key);
+          if (!existing || (!existing.latestChapterId && story.latestChapterId)) merged.set(key, story);
+        }
+        const extraCount = Math.max(0, merged.size - stories.length);
+        stories = [...merged.values()].slice(0, pageSize);
+        totalItems += extraCount;
+        totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+        if (extra.length) sourceLabel = `${sourceLabel} + MangaDex`;
+      }
       const exactMatch = stories.some((story) =>
         normalizeTitle(story.title) === normalizeTitle(query)
         || Boolean(story.originTitle && normalizeTitle(story.originTitle) === normalizeTitle(query))
@@ -431,7 +530,7 @@ export async function getDiscoverCatalog({
           stories = suggestions;
           totalItems = suggestions.length;
           totalPages = 1;
-          sourceLabel = "Gợi ý tên gần đúng từ OTruyen";
+          sourceLabel = `Gợi ý tên gần đúng từ ${contentApiSourceName()}`;
         }
         searchNotice = {
           requestedQuery: query,
@@ -498,9 +597,22 @@ export async function getFilteredDiscoverCatalog({
   const safePageSize = Math.min(Math.max(Math.floor(pageSize) || 24, 1), 48);
   const safeScanPages = Math.min(Math.max(Math.floor(scanPages) || 1, 1), 16);
   const primaryGenre = include[0];
+  const needsGlobalFiltering = include.length > 1
+    || exclude.length > 0
+    || Boolean(mood || format || pace || minScore || maxChapters)
+    || sort !== "latest";
+  if (!needsGlobalFiltering) {
+    return await getDiscoverCatalog({
+      query,
+      page,
+      primaryGenre,
+      status,
+      enrichRatings: false,
+    });
+  }
 
   try {
-    const firstPayload = await fetchJson<OTruyenListPayload>(`${API_BASE}${discoverListPath({ query, primaryGenre, status, page: 1 })}`);
+    const firstPayload = await fetchComicJson<OTruyenListPayload>(discoverListPath({ query, primaryGenre, status, page: 1 }));
     const upstreamPagination = firstPayload.data?.params?.pagination;
     const upstreamPages = (
       upstreamPagination?.totalPages
@@ -509,8 +621,8 @@ export async function getFilteredDiscoverCatalog({
     const pagesToScan = Math.min(Math.max(upstreamPages, 1), safeScanPages);
     const remaining = await Promise.allSettled(
       Array.from({ length: Math.max(0, pagesToScan - 1) }, (_, index) => index + 2)
-        .map((sourcePage) => fetchJson<OTruyenListPayload>(
-          `${API_BASE}${discoverListPath({ query, primaryGenre, status, page: sourcePage })}`,
+        .map((sourcePage) => fetchComicJson<OTruyenListPayload>(
+          discoverListPath({ query, primaryGenre, status, page: sourcePage }),
           5_000,
           5 * 60 * 1_000,
         )),
@@ -522,6 +634,10 @@ export async function getFilteredDiscoverCatalog({
     let candidates = payloads.flatMap((payload) =>
       (payload.data?.items ?? []).map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE)),
     );
+    if (query.trim()) {
+      const mangaDexCandidates = await searchMangaDexStories(query, 32).catch(() => []);
+      candidates.push(...mangaDexCandidates);
+    }
     candidates = [...new Map(candidates.map((story) => [story.id, story])).values()];
 
     const needsCommunityRating = sort === "rating" || minScore > 0;
@@ -606,10 +722,11 @@ export async function getStory(
   options: { includeExternalRating?: boolean } = {},
 ): Promise<StoryDetailData | null> {
   if (!/^[a-z0-9-]{1,160}$/.test(slug)) return null;
+  if (slug.startsWith("mangadex-")) return await getMangaDexStory(slug);
   try {
-    const payload = await fetchJson<{
+    const payload = await fetchComicJson<{
       data?: { item?: OTruyenItem; APP_DOMAIN_CDN_IMAGE?: string };
-    }>(`${API_BASE}/truyen-tranh/${slug}`);
+    }>(`/truyen-tranh/${slug}`);
     const item = payload.data?.item;
     if (!item) return null;
     const summary = normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE);
@@ -626,12 +743,15 @@ export async function getStory(
         apiUrl: chapter.chapter_api_data ?? "",
       }))
       .filter((chapter) => chapter.id)
-      .reverse()
       .filter((chapter) => {
         if (seenChapterNumbers.has(chapter.number)) return false;
         seenChapterNumbers.add(chapter.number);
         return true;
-      });
+      })
+      .sort((left, right) =>
+        (Number.parseFloat(right.number) || 0) - (Number.parseFloat(left.number) || 0)
+        || right.number.localeCompare(left.number, "vi", { numeric: true })
+      );
 
     return {
       ...summary,
@@ -640,12 +760,13 @@ export async function getStory(
         ? `${rating.isAggregate ? "Tổng hợp" : "Điểm nguồn"} · ${rating.sources.map((source) => source.sourceName).join(" + ")}`
         : summary.scoreSource,
       scoreKind: rating.score5 ? "community" : summary.scoreKind,
-      latestChapter: chapters[0]?.number ?? summary.latestChapter,
-      latestChapterId: chapters[0]?.id ?? summary.latestChapterId,
+      latestChapter: summary.latestChapter ?? chapters[0]?.number ?? null,
+      latestChapterId: summary.latestChapterId ?? chapters[0]?.id ?? null,
       synopsis: stripHtml(item.content) || "Nguồn chưa cung cấp tóm tắt cho truyện này.",
       authors: item.author?.filter(Boolean) ?? [],
       chapters,
-      sourceUrl: `https://otruyen.cc/truyen-tranh/${slug}`,
+      sourceUrl: item.source_url ?? `https://otruyen.cc/truyen-tranh/${slug}`,
+      sourceName: item.source_name ? `${contentApiSourceName()} · ${item.source_name}` : contentApiSourceName(),
       rating,
     };
   } catch {
@@ -654,10 +775,9 @@ export async function getStory(
 }
 
 export async function getChapterPages(chapterId: string): Promise<ChapterPageData | null> {
-  if (!/^[a-f0-9]{24}$/i.test(chapterId)) return null;
+  if (!/^[a-z0-9._~-]{1,240}$/i.test(chapterId)) return null;
   try {
-    const apiUrl = `https://sv1.otruyencdn.com/v1/api/chapter/${chapterId}`;
-    const payload = await fetchJson<{
+    type ChapterPayload = {
       data?: {
         domain_cdn?: string;
         item?: {
@@ -666,35 +786,50 @@ export async function getChapterPages(chapterId: string): Promise<ChapterPageDat
           chapter_image?: Array<{ image_file?: string }>;
         };
       };
-    }>(apiUrl);
-    const domain = payload.data?.domain_cdn;
+    };
+    let payload: ChapterPayload | null = null;
+    let apiUrl = getContentApiConfiguration().baseUrl
+      ? `${getContentApiConfiguration().baseUrl}/chapter/${encodeURIComponent(chapterId)}`
+      : "";
+    try {
+      payload = await fetchComicJson<ChapterPayload>(
+        `/chapter/${encodeURIComponent(chapterId)}`,
+        8_000,
+        5 * 60 * 1_000,
+      );
+    } catch {
+      payload = null;
+    }
+    if (!payload?.data?.item && /^[a-f0-9]{24}$/i.test(chapterId)) {
+      for (const server of ["sv1", "sv2", "sv3"]) {
+        apiUrl = `https://${server}.otruyencdn.com/v1/api/chapter/${chapterId}`;
+        try {
+          payload = await fetchJson<ChapterPayload>(apiUrl, 6_000, 5 * 60 * 1_000);
+          if (payload.data?.item) break;
+        } catch {
+          payload = null;
+        }
+      }
+    }
+    if (!payload) return null;
+    const rawDomain = payload.data?.domain_cdn?.replace(/\/+$/, "");
     const item = payload.data?.item;
-    if (!domain || !/^https:\/\/sv\d+\.otruyencdn\.com$/i.test(domain)) return null;
+    if (!rawDomain || !/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(rawDomain)) return null;
     if (!item?.chapter_path || item.chapter_path.includes("..")) return null;
+    const cleanPath = item.chapter_path.replace(/^\/+|\/+$/g, "");
     const pages = (item.chapter_image ?? [])
       .map((image) => image.image_file)
       .filter((file): file is string => Boolean(file && /^[a-z0-9_.-]+$/i.test(file)))
-      .map((file) => `${domain}/${item.chapter_path}/${file}`);
+      .map((file) => `${rawDomain}/${cleanPath}/${file}`);
     if (!pages.length) return null;
     return {
       chapterId,
       chapterName: item.chapter_name ?? "?",
       pages,
-      sourceUrl: apiUrl,
+      sourceUrl: apiUrl || `${rawDomain}/${cleanPath}`,
     };
   } catch {
     return null;
   }
 }
 
-export function formatRelativeDate(value: string): string {
-  const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) return "chưa rõ";
-  const diff = Date.now() - time;
-  const days = Math.max(0, Math.round(diff / 86_400_000));
-  if (days === 0) return "hôm nay";
-  if (days === 1) return "hôm qua";
-  if (days < 30) return `${days} ngày trước`;
-  const months = Math.round(days / 30);
-  return `${months} tháng trước`;
-}

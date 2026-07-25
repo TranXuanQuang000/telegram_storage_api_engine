@@ -1,0 +1,49 @@
+{
+  "result": "ok",
+  "total": 1,
+  "limit": 20,
+  "offset": 0,
+  "data": [
+    {
+      "id": "manga-safe-1",
+      "type": "manga",
+      "attributes": {
+        "title": {
+          "vi": "Thợ Săn An Toàn",
+          "en": "Safe Hunter"
+        },
+        "description": {
+          "vi": "Bản mô tả tiếng Việt.",
+          "en": "English description."
+        },
+        "status": "ongoing",
+        "contentRating": "safe",
+        "updatedAt": "2026-07-25T00:00:00Z",
+        "tags": [
+          {
+            "attributes": {
+              "name": {
+                "vi": "Hành động",
+                "en": "Action"
+              }
+            }
+          }
+        ]
+      },
+      "relationships": [
+        {
+          "type": "cover_art",
+          "attributes": {
+            "fileName": "cover-safe.jpg"
+          }
+        },
+        {
+          "type": "author",
+          "attributes": {
+            "name": "Tác Giả"
+          }
+        }
+      ]
+    }
+  ]
+}

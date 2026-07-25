@@ -3,13 +3,7 @@
 import { ArrowRight, Check, Minus, Search, SlidersHorizontal, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-
-const genres = [
-  ["action", "Hành động"], ["fantasy", "Kỳ ảo"], ["romance", "Tình cảm"],
-  ["drama", "Drama"], ["webtoon", "Webtoon"], ["manhwa", "Manhwa"],
-  ["mystery", "Bí ẩn"], ["school-life", "Học đường"], ["slice-of-life", "Đời thường"],
-  ["truyen-mau", "Truyện màu"], ["sports", "Thể thao"], ["horror", "Kinh dị"],
-] as const;
+import { OTRUYEN_GENRES } from "../lib/genre-options";
 
 const moods = [
   ["mood-intense", "Căng thẳng"],
@@ -102,7 +96,7 @@ export function DiscoverFilters({ initialQuery = "" }: { initialQuery?: string }
       <div className="filter-group">
         <span className="filter-label">Thể loại & định dạng</span>
         <div className="filter-chips">
-          {genres.map(([slug, label]) => {
+          {OTRUYEN_GENRES.map(([slug, label]) => {
             const state = include.has(slug) ? "include" : exclude.has(slug) ? "exclude" : "idle";
             return (
               <button key={slug} type="button" data-genre={slug} data-state={state} onClick={() => toggleGenre(slug)} aria-pressed={state !== "idle"}>

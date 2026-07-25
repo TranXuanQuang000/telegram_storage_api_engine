@@ -2,7 +2,7 @@ import { getExternalRating } from "../external-ratings";
 
 export type RatingIngestResult = { checked: number; enriched: number; failed: number };
 
-type StoryRow = { id: string; title: string };
+type StoryRow = { id: string; title: string; origin: string | null };
 
 const ratingSources = [
   ["source_anilist", "anilist", "AniList", "https://anilist.co", "Public GraphQL API; aggregate score metadata with attribution and short TTL"],
@@ -18,15 +18,18 @@ export async function runRatingEnrichment(db: D1Database, requestedLimit = 6): P
   await db.batch(sourceStatements);
 
   const rows = await db.prepare(
-    "SELECT s.id, s.canonical_title AS title FROM stories s LEFT JOIN story_scores ss ON ss.story_id = s.id ORDER BY CASE WHEN ss.source_count IS NULL OR ss.source_count = 0 THEN 0 ELSE 1 END, ss.computed_at ASC, s.updated_at DESC LIMIT ?",
+    "SELECT s.id, s.canonical_title AS title, s.origin FROM stories s LEFT JOIN story_scores ss ON ss.story_id = s.id WHERE s.medium = 'comic' ORDER BY CASE WHEN ss.source_count IS NULL OR ss.source_count = 0 THEN 0 ELSE 1 END, ss.computed_at ASC, s.updated_at DESC LIMIT ?",
   ).bind(limit).all<StoryRow>();
 
   let enriched = 0;
   let failed = 0;
   for (const story of rows.results ?? []) {
     try {
-      const aggregate = await getExternalRating([story.title]);
-      if (!aggregate.sources.length || aggregate.score5 === null) continue;
+      const aggregate = await getExternalRating([story.title, ...(story.origin?.split(/\s*·\s*/).filter(Boolean) ?? [])]);
+      if (!aggregate.sources.length || aggregate.score5 === null) {
+        await db.prepare("UPDATE story_scores SET computed_at = CURRENT_TIMESTAMP WHERE story_id = ?").bind(story.id).run();
+        continue;
+      }
       const statements = aggregate.sources.map((source) => db.prepare(
         "INSERT INTO rating_snapshots (id, story_id, source_id, score_5, vote_count, captured_at, source_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
       ).bind(`rating_${crypto.randomUUID()}`, story.id, `source_${source.sourceId}`, source.score5, source.voteCount, source.capturedAt, source.sourceUrl));

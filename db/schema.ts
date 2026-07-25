@@ -8,9 +8,25 @@ export const profiles = sqliteTable("profiles", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  displayName: text("display_name"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const stories = sqliteTable("stories", {
   id: text("id").primaryKey(),
   slug: text("slug").notNull().unique(),
+  medium: text("medium", { enum: ["comic", "novel"] }).notNull().default("comic"),
   canonicalTitle: text("canonical_title").notNull(),
   synopsis: text("synopsis").notNull().default(""),
   author: text("author"),
@@ -19,6 +35,8 @@ export const stories = sqliteTable("stories", {
   contentRating: text("content_rating", { enum: ["safe", "suggestive", "mature", "explicit"] }).notNull().default("safe"),
   coverUrl: text("cover_url"),
   latestChapter: real("latest_chapter"),
+  latestChapterLabel: text("latest_chapter_label"),
+  latestChapterId: text("latest_chapter_id"),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("stories_updated_idx").on(table.updatedAt), index("stories_status_idx").on(table.status)]);
 
@@ -54,6 +72,7 @@ export const sourceItems = sqliteTable("source_items", {
   externalUrl: text("external_url").notNull(),
   etag: text("etag"),
   sourceUpdatedAt: text("source_updated_at"),
+  lastCheckedAt: text("last_checked_at"),
 }, (table) => [uniqueIndex("source_items_external_idx").on(table.sourceId, table.externalId)]);
 
 export const chapters = sqliteTable("chapters", {
@@ -99,8 +118,14 @@ export const readingProgress = sqliteTable("reading_progress", {
   profileId: text("profile_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
   storyId: text("story_id").notNull().references(() => stories.id, { onDelete: "cascade" }),
   chapterId: text("chapter_id").notNull(),
+  chapterName: text("chapter_name").notNull().default(""),
   page: integer("page").notNull().default(0),
+  totalPages: integer("total_pages").notNull().default(0),
   progress: real("progress").notNull().default(0),
+  storyTitle: text("story_title"),
+  coverUrl: text("cover_url"),
+  medium: text("medium", { enum: ["comic", "novel"] }).notNull().default("comic"),
+  locator: text("locator"),
   idempotencyKey: text("idempotency_key").notNull(),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [primaryKey({ columns: [table.profileId, table.storyId] }), uniqueIndex("progress_idempotency_idx").on(table.idempotencyKey)]);

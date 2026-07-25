@@ -13,6 +13,7 @@ type HistoryRecord = {
   storyTitle?: string;
   coverUrl?: string | null;
   updatedAt: string;
+  medium?: "comic" | "novel";
 };
 
 type StoryStat = { slug: string; opens: number; lastOpenedAt: string };
@@ -63,7 +64,7 @@ export function PersonalizedHomeShelves() {
         const statBySlug = new Map(stats.map((item) => [item.slug, item]));
         const merged = new Map<string, StoryCardData>();
         for (const story of records) if (savedIds.has(story.id)) merged.set(story.slug, story);
-        for (const item of history) {
+        for (const item of history.filter((record) => record.medium !== "novel")) {
           const story = storyFromHistory(item);
           if (!merged.has(story.slug)) merged.set(story.slug, story);
         }

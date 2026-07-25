@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "muctruyen",
+  "pages_build_output_dir": "dist/client",
+  "compatibility_date": "2026-07-25",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "site-creator-d1",
+      "database_id": "597c4b6d-65d2-45d4-91f2-784523e85bd6",
+      "migrations_dir": "drizzle"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#05070c">
+  <title>Mực · Phòng đọc offline</title>
+  <style>
+    :root{color-scheme:dark;--ink:#05070c;--paper:#eef3f7;--muted:#9aa7b4;--cyan:#00e5ff;--signal:#c7ff3c}
+    *{box-sizing:border-box}html,body{margin:0;background:var(--ink);color:var(--paper);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+    body{min-height:100vh;background-image:radial-gradient(circle at 18% 8%,rgba(0,229,255,.1),transparent 28rem),radial-gradient(circle at 86% 24%,rgba(124,92,255,.12),transparent 30rem)}
+    header,nav{position:fixed;z-index:10;left:50%;transform:translateX(-50%);width:min(100% - 1rem,72rem);display:flex;align-items:center;gap:.65rem;padding:.62rem .8rem;border:1px solid rgba(255,255,255,.13);background:rgba(5,7,12,.88);backdrop-filter:blur(16px);box-shadow:0 0 28px rgba(0,229,255,.08)}
+    header{top:.5rem;border-radius:1rem}nav{bottom:.5rem;border-radius:1rem;justify-content:center}
+    a,button{border:0;color:inherit;background:transparent;text-decoration:none;cursor:pointer}
+    header>a,header>button,nav>a{display:inline-flex;align-items:center;justify-content:center;min-height:2.35rem;padding:.45rem .7rem;border-radius:.7rem;border:1px solid rgba(255,255,255,.12)}
+    header div{min-width:0;flex:1}header small,header strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}header small{color:var(--muted);font-size:.72rem}header strong{font-size:.92rem}
+    main{width:min(100%,74rem);margin:auto;padding:4.8rem 0 5.2rem}.state{min-height:70vh;padding:2rem;display:grid;place-content:center;text-align:center}.state h1{font-size:clamp(2rem,8vw,4rem);margin:.4rem 0}.state p{max-width:34rem;color:var(--muted);line-height:1.7}
+    figure{margin:0;content-visibility:auto;contain-intrinsic-size:auto 1700px}figure img{display:block;width:100%;height:auto;margin:0;border:0}figcaption{height:0;overflow:hidden}
+    .meter{height:.25rem;flex:1;max-width:18rem;background:rgba(255,255,255,.12);border-radius:9rem;overflow:hidden}.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--signal));width:0}
+    .badge{font-size:.68rem;letter-spacing:.12em;color:var(--signal)}.hidden{display:none!important}
+    @media(max-width:620px){header .badge{display:none}header{gap:.35rem;padding:.5rem}header>a,header>button{padding:.4rem .55rem}main{padding-top:4.25rem}}
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/downloads" aria-label="Danh sách tải">←</a>
+    <div><small id="story">MỰC OFFLINE</small><strong id="chapter">Đang mở gói truyện…</strong></div>
+    <span class="badge">ĐÃ GHIM · ON DEVICE</span>
+    <button id="theme" type="button" aria-label="Đổi nền đọc">☾</button>
+  </header>
+  <main id="reader"><section class="state"><div><span class="badge">OFFLINE READER</span><h1>Đang kiểm tra bộ nhớ.</h1><p>Mực đang đối chiếu manifest với những trang đã ghim trên thiết bị này.</p></div></section></main>
+  <nav id="nav" class="hidden">
+    <a id="previous" href="#" aria-label="Chương trước">← Chương trước</a>
+    <div class="meter" aria-hidden="true"><i id="progress"></i></div>
+    <a id="next" href="#" aria-label="Chương sau">Chương sau →</a>
+  </nav>
+  <script>
+    (() => {
+      const DB_NAME = "muc-reader", DB_VERSION = 4, STORE = "downloads";
+      const reader = document.getElementById("reader");
+      const chapterId = new URLSearchParams(location.search).get("chapter")
+        || location.pathname.match(/\/read\/([a-f0-9]{24})/i)?.[1]
+        || "";
+      const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+      const openDb = () => new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "chapterId" });
+          if (!db.objectStoreNames.contains("novelDownloads")) db.createObjectStore("novelDownloads", { keyPath: "chapterId" });
+          if (!db.objectStoreNames.contains("progressQueue")) db.createObjectStore("progressQueue", { keyPath: "storyId" });
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const allRecords = async () => {
+        const db = await openDb();
+        return await new Promise((resolve, reject) => {
+          const request = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
+          request.onsuccess = () => { db.close(); resolve(request.result || []); };
+          request.onerror = () => { db.close(); reject(request.error); };
+        });
+      };
+      const state = (title, copy) => {
+        reader.innerHTML = `<section class="state"><div><span class="badge">MỰC OFFLINE</span><h1>${escapeText(title)}</h1><p>${escapeText(copy)}</p><p><a href="/downloads">← Mở danh sách đã tải</a></p></div></section>`;
+      };
+      async function boot() {
+        if (!chapterId) return state("Chưa chọn chương.", "Hãy mở trang Tải xuống và chọn một chương đã ghim.");
+        const records = await allRecords();
+        const record = records.find((item) => item.chapterId === chapterId);
+        if (!record) return state("Không tìm thấy gói tải.", "Chương này chưa được ghim trên thiết bị hoặc dữ liệu trình duyệt đã bị dọn.");
+        const cacheKeys = await caches.open("muc-chapters-v3");
+        const available = await Promise.all((record.pageUrls || []).map((url) => cacheKeys.match(url)));
+        if (!available.length || available.some((response) => !response)) return state("Gói tải chưa trọn vẹn.", "Một vài trang đã bị trình duyệt dọn khỏi bộ nhớ. Kết nối mạng và tải lại chương để khôi phục.");
+        document.getElementById("story").textContent = record.title;
+        document.getElementById("chapter").textContent = `Chương ${record.chapterName || "mới"} · ${record.pages} trang`;
+        reader.innerHTML = "";
+        record.pageUrls.forEach((url, index) => {
+          const figure = document.createElement("figure");
+          const img = document.createElement("img");
+          img.alt = `Trang ${index + 1}`; img.width = 1440; img.height = 2200;
+          img.loading = index < 2 ? "eager" : "lazy"; img.decoding = "async"; img.src = url;
+          const caption = document.createElement("figcaption"); caption.textContent = `Trang ${index + 1}`;
+          figure.append(img, caption); reader.append(figure);
+        });
+        const sameStory = records.filter((item) => item.storyId === record.storyId).sort((a, b) => Number(a.chapterName || 0) - Number(b.chapterName || 0));
+        const at = sameStory.findIndex((item) => item.chapterId === chapterId);
+        const setLink = (id, item) => {
+          const link = document.getElementById(id);
+          if (!item) { link.classList.add("hidden"); return; }
+          link.href = `/offline-reader.html?chapter=${encodeURIComponent(item.chapterId)}`;
+        };
+        setLink("previous", sameStory[at - 1]); setLink("next", sameStory[at + 1]);
+        document.getElementById("nav").classList.remove("hidden");
+        let frame = 0;
+        const update = () => {
+          cancelAnimationFrame(frame);
+          frame = requestAnimationFrame(() => {
+            const max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+            document.getElementById("progress").style.width = `${Math.min(100, scrollY / max * 100)}%`;
+          });
+        };
+        addEventListener("scroll", update, { passive: true }); update();
+      }
+      document.getElementById("theme").addEventListener("click", () => {
+        const light = document.documentElement.dataset.theme !== "light";
+        document.documentElement.dataset.theme = light ? "light" : "dark";
+        document.documentElement.style.filter = light ? "invert(.88) hue-rotate(180deg)" : "";
+      });
+      boot().catch(() => state("Không mở được bộ nhớ.", "Trình duyệt đang chặn IndexedDB hoặc Cache Storage."));
+    })();
+  </script>
+</body>
+</html>
