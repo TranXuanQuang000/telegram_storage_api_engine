@@ -13,7 +13,7 @@ from app.api.v1.sources import router as sources_router
 app = FastAPI(
     title="Multi-Source Aggregator API Engine",
     description="REST API Compatibility Server R3",
-    version="1.2.0",
+    version="1.3.0",
 )
 
 allowed_origins = [
@@ -87,7 +87,7 @@ async def health_check():
     return {
         "status": "ok",
         "service": "aggregator-api-engine",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "capabilities": {
             "comic_drop_in": True,
             "novel_api": True,

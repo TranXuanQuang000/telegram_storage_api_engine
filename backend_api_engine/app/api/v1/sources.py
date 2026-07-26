@@ -22,7 +22,24 @@ async def list_sources():
                     "transport": spec.transport,
                     "enabled": spec.id in enabled,
                     "attribution_required": spec.attribution_required,
-                    "selection_mode": "adaptive" if spec.id in enabled else "disabled",
+                    "access": spec.access,
+                    "implementation": spec.implementation,
+                    "capabilities": list(spec.capabilities),
+                    "languages": list(spec.languages),
+                    "coverage": spec.coverage,
+                    "stability_score": spec.stability_score,
+                    "notes": spec.notes,
+                    "selection_mode": (
+                        "adaptive"
+                        if spec.id in enabled
+                        else "frontend"
+                        if spec.implementation == "frontend"
+                        else "metadata"
+                        if spec.access == "metadata"
+                        else "fail_closed"
+                        if spec.access == "disabled"
+                        else "disabled"
+                    ),
                 }
                 for spec in SOURCE_SPECS.values()
             ]

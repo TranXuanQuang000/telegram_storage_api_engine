@@ -146,6 +146,7 @@ def test_new_sources_are_registered_in_api_and_aggregator():
         "metruyenchu",
         "tangthuvien",
         "wikidich",
+        "gutendex",
     }
     assert required <= ALLOWED_NOVEL_SOURCES
 

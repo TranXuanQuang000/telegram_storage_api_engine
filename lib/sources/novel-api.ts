@@ -30,6 +30,7 @@ const sourceLabels: Record<string, string> = {
   metruyenchu: "MeTruyenChu",
   tangthuvien: "Tàng Thư Viện",
   wikidich: "Wikidich",
+  gutendex: "Project Gutenberg",
 };
 
 const responseCache = new Map<string, { expiresAt: number; value?: unknown; pending?: Promise<unknown> }>();

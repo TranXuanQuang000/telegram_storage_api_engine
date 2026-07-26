@@ -2,15 +2,16 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.services.aggregator import AggregatorService, get_aggregator_service
+from app.config.sources import SOURCE_SPECS
+from app.models.story import StoryMedium
 
 router = APIRouter()
-ALLOWED_NOVEL_SOURCES = {
-    "auto",
-    "hako",
-    "truyenfull",
-    "metruyenchu",
-    "tangthuvien",
-    "wikidich",
+ALLOWED_NOVEL_SOURCES = {"auto"} | {
+    source_id
+    for source_id, spec in SOURCE_SPECS.items()
+    if spec.medium == StoryMedium.NOVEL
+    and spec.access == "reader"
+    and spec.implementation == "backend"
 }
 
 

@@ -14,10 +14,11 @@ from app.connectors.novel.truyenfull import TruyenFullConnector
 from app.connectors.novel.metruyenchu import MetruyenchuConnector
 from app.connectors.novel.tangthuvien import TangThuVienConnector
 from app.connectors.novel.wikidich import WikidichConnector
+from app.connectors.novel.gutendex import GutendexConnector
 from app.config.sources import is_source_enabled
 from app.engine.merger import SmartChapterMerger
 from app.engine.cleaner import NovelTextCleaner
-from app.engine.matcher import story_identity_score
+from app.engine.matcher import normalize_identity_text, story_identity_score
 from app.engine.source_selector import AdaptiveSourceSelector, SourceCandidate
 from app.models.chapter import ChapterContent, ChapterHeader
 from app.models.story import CatalogFetchResult, Story
@@ -44,6 +45,15 @@ class AggregatorService:
         self.metruyenchu_connector = MetruyenchuConnector(client=client)
         self.tangthuvien_connector = TangThuVienConnector(client=client)
         self.wikidich_connector = WikidichConnector(client=client)
+        self.gutendex_connector = GutendexConnector(client=client)
+        self.novel_connectors = {
+            "hako": self.hako_connector,
+            "truyenfull": self.truyenfull_connector,
+            "metruyenchu": self.metruyenchu_connector,
+            "tangthuvien": self.tangthuvien_connector,
+            "wikidich": self.wikidich_connector,
+            "gutendex": self.gutendex_connector,
+        }
         
         self.merger = SmartChapterMerger()
         self.cleaner = NovelTextCleaner()
@@ -62,11 +72,8 @@ class AggregatorService:
         self.otruyen_connector._client = client
         for connector in self.comic_connectors.values():
             connector._client = client
-        self.hako_connector._client = client
-        self.truyenfull_connector._client = client
-        self.metruyenchu_connector._client = client
-        self.tangthuvien_connector._client = client
-        self.wikidich_connector._client = client
+        for connector in self.novel_connectors.values():
+            connector._client = client
 
     def get_cache(self, key: str) -> Optional[Any]:
         entry = self._cache.get(key)
@@ -419,7 +426,11 @@ class AggregatorService:
         cached = self.get_cache(cache_key)
         if cached is not None:
             return cached
-        source_ids = ["hako", "truyenfull", "metruyenchu", "tangthuvien", "wikidich"]
+        source_ids = [
+            source_id
+            for source_id in self.novel_connectors
+            if is_source_enabled(source_id)
+        ]
 
         async def fetch(source_id: str):
             try:
@@ -434,32 +445,52 @@ class AggregatorService:
 
         results = await asyncio.gather(*(fetch(source_id) for source_id in source_ids))
         stories: List[Story] = []
-        seen: List[Story] = []
+        seen_by_identity: Dict[str, Story] = {}
         contributing = []
+        result_by_source: Dict[str, CatalogFetchResult] = {}
         for source_id, result in results:
             if result is None:
                 continue
             contributing.append(source_id)
-            for candidate in result.stories:
-                equivalent = next(
+            result_by_source[source_id] = result
+
+        # Round-robin keeps the first provider from consuming the entire page while
+        # deterministic title+author buckets make catalog dedupe effectively O(N).
+        max_rows = max(
+            (len(result.stories) for result in result_by_source.values()),
+            default=0,
+        )
+        for row in range(max_rows):
+            for source_id in source_ids:
+                source_result = result_by_source.get(source_id)
+                if source_result is None or row >= len(source_result.stories):
+                    continue
+                candidate = source_result.stories[row]
+                identity = "|".join(
                     (
-                        existing
-                        for existing in seen
-                        if story_identity_score(existing, candidate) >= 0.94
-                    ),
-                    None,
+                        normalize_identity_text(candidate.title),
+                        normalize_identity_text(candidate.author),
+                    )
                 )
+                equivalent = seen_by_identity.get(identity) if identity.strip("|") else None
                 if equivalent is None:
                     stories.append(candidate)
-                    seen.append(candidate)
+                    if identity.strip("|"):
+                        seen_by_identity[identity] = candidate
                 elif self._story_quality(candidate) > self._story_quality(equivalent):
                     index = stories.index(equivalent)
                     stories[index] = candidate
-                    seen[index] = candidate
-        stories = stories[:limit]
+                    seen_by_identity[identity] = candidate
+                if len(stories) >= limit:
+                    break
+            if len(stories) >= limit:
+                break
         result = CatalogFetchResult(
             stories=stories,
-            total=len(stories),
+            total=sum(
+                item.total if item.total is not None else len(item.stories)
+                for item in result_by_source.values()
+            ),
             page=page,
             limit=limit,
             has_more=any(item is not None and item.has_more for _, item in results),
@@ -493,7 +524,11 @@ class AggregatorService:
         except Exception:
             for s in (
                 secondary_sources
-                or ["truyenfull", "metruyenchu", "tangthuvien", "wikidich"]
+                or [
+                    source_id
+                    for source_id in self.novel_connectors
+                    if is_source_enabled(source_id)
+                ]
             ):
                 if s != primary_source:
                     try:
@@ -511,7 +546,11 @@ class AggregatorService:
         sources_to_try = (
             secondary_sources
             if secondary_sources is not None
-            else ["truyenfull", "metruyenchu", "tangthuvien", "wikidich", "hako"]
+            else [
+                source_id
+                for source_id in self.novel_connectors
+                if is_source_enabled(source_id)
+            ]
         )
         for sec_name in sources_to_try:
             if sec_name.lower() != p_connector.source_id.lower():
@@ -537,11 +576,9 @@ class AggregatorService:
         source_ids: Optional[List[str]] = None,
     ) -> Tuple[Story, List[ChapterHeader]]:
         enabled = source_ids or [
-            "hako",
-            "truyenfull",
-            "metruyenchu",
-            "tangthuvien",
-            "wikidich",
+            source_id
+            for source_id in self.novel_connectors
+            if is_source_enabled(source_id)
         ]
         cache_key = f"novel:story:auto:{slug}:{','.join(enabled)}"
         cached = self.get_cache(cache_key)
@@ -604,7 +641,11 @@ class AggregatorService:
 
         primary_conn = self._get_novel_connector(source)
         connectors_to_try = [primary_conn]
-        for s in ["hako", "truyenfull", "metruyenchu", "tangthuvien", "wikidich"]:
+        for s in self.novel_connectors:
+            if not is_source_enabled(s):
+                continue
+            if s == "gutendex" and source != "gutendex" and not slug.startswith("gutenberg-"):
+                continue
             conn = self._get_novel_connector(s)
             if conn not in connectors_to_try:
                 connectors_to_try.append(conn)
@@ -638,14 +679,7 @@ class AggregatorService:
 
     def _get_novel_connector(self, source: str):
         source_lower = source.strip().lower()
-        connectors = {
-            "hako": self.hako_connector,
-            "truyenfull": self.truyenfull_connector,
-            "metruyenchu": self.metruyenchu_connector,
-            "tangthuvien": self.tangthuvien_connector,
-            "wikidich": self.wikidich_connector,
-        }
-        connector = connectors.get(source_lower)
+        connector = self.novel_connectors.get(source_lower)
         if connector is None:
             raise ValueError(f"Unsupported novel source '{source}'")
         if not is_source_enabled(source_lower):

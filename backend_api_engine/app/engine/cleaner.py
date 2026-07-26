@@ -1,3 +1,4 @@
+import html
 import re
 from typing import List, Optional
 from bs4 import BeautifulSoup
@@ -117,7 +118,7 @@ class NovelTextCleaner:
 
         # 4. Format output
         if as_html:
-            return "\n".join(f"<p>{p}</p>" for p in paragraphs)
+            return "\n".join(f"<p>{html.escape(p)}</p>" for p in paragraphs)
         else:
             return "\n\n".join(paragraphs)
 
