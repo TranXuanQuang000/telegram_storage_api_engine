@@ -11,11 +11,13 @@ from app.api.v1.novel import router as novel_router
 from app.api.v1.sources import router as sources_router
 from app.api.v1.imports import router as imports_router
 from app.api.v1.coverage import router as coverage_router
+from app.api.v1.archive import router as archive_router
+from app.services.telegram_storage import TelegramStorageService
 
 app = FastAPI(
     title="Multi-Source Aggregator API Engine",
     description="REST API Compatibility Server R3",
-    version="1.4.0",
+    version="1.5.0",
 )
 
 allowed_origins = [
@@ -33,7 +35,13 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["Accept", "Authorization", "Content-Type", "X-Muc-Api-Key"],
+    allow_headers=[
+        "Accept",
+        "Authorization",
+        "Content-Type",
+        "X-Archive-Api-Key",
+        "X-Muc-Api-Key",
+    ],
 )
 
 # 2. Response Compression Middleware
@@ -53,7 +61,8 @@ async def add_response_time_header(request: Request, call_next):
 @app.middleware("http")
 async def protect_content_api(request: Request, call_next):
     expected = os.getenv("MUC_API_TOKEN", "").strip()
-    if expected and request.url.path.startswith("/v1/api/"):
+    is_archive_path = request.url.path.startswith("/v1/api/archive")
+    if expected and request.url.path.startswith("/v1/api/") and not is_archive_path:
         bearer = request.headers.get("authorization", "")
         provided = bearer[7:].strip() if bearer.lower().startswith("bearer ") else request.headers.get("x-muc-api-key", "")
         if not hmac.compare_digest(provided, expected):
@@ -84,21 +93,25 @@ app.include_router(novel_router, prefix="/v1/api", tags=["Novel API Extension"])
 app.include_router(sources_router, prefix="/v1/api", tags=["Source Registry"])
 app.include_router(imports_router, prefix="/v1/api", tags=["Public Metadata Import"])
 app.include_router(coverage_router, prefix="/v1/api", tags=["Coverage Audit"])
+app.include_router(archive_router, tags=["Authorized Telegram Archive"])
 
 
 @app.get("/health")
 async def health_check():
+    storage = TelegramStorageService.from_env()
     return {
         "status": "ok",
         "service": "aggregator-api-engine",
-        "version": "1.4.0",
+        "version": "1.5.0",
         "capabilities": {
             "comic_drop_in": True,
             "novel_api": True,
             "adaptive_source_selection": True,
             "chapter_coverage_audit": True,
             "public_metadata_import": True,
-            "telegram_storage": False,
+            "telegram_storage": storage.configured,
+            "authorized_archive": True,
+            "archive_allowed_sources": sorted(storage.allowed_sources),
             "api_token": bool(os.getenv("MUC_API_TOKEN", "").strip()),
         },
     }
