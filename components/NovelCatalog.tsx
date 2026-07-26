@@ -28,10 +28,18 @@ export function NovelCatalog({ initialNovels, initialQuery = "" }: { initialNove
 
   function load(page = 1, signal?: AbortSignal) {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: "24", sort });
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: "24",
+      sort,
+      catalogVersion: "2",
+    });
     if (query.trim()) params.set("q", query.trim());
     if (genre) params.set("genre", genre);
-    return fetch(`/api/novels?${params.toString()}`, { signal })
+    return fetch(`/api/novels?${params.toString()}`, {
+      signal,
+      cache: "no-store",
+    })
       .then(async (response) => response.ok ? await response.json() as CatalogPayload : null)
       .then((next) => { if (next) setPayload(next); })
       .finally(() => setLoading(false));

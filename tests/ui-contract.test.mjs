@@ -226,6 +226,8 @@ test("novel API uses opaque route IDs and preserves per-chapter provenance", () 
   const adapter = source("lib/sources/novel-api.ts");
   const novels = source("lib/novels.ts");
   const reader = source("components/TextReaderClient.tsx");
+  const catalog = source("components/NovelCatalog.tsx");
+  const catalogRoute = source("app/api/novels/route.ts");
   assert.match(adapter, /napi\.\$\{source\}/);
   assert.match(adapter, /nch\.\$\{primarySource\}\.\$\{source\}/);
   assert.match(adapter, /as_html=false/);
@@ -233,5 +235,8 @@ test("novel API uses opaque route IDs and preserves per-chapter provenance", () 
   assert.match(novels, /getNovelApiCatalog/);
   assert.match(novels, /getNovelApiChapter/);
   assert.match(reader, /sourceName/);
+  assert.match(catalog, /catalogVersion: "2"/);
+  assert.match(catalog, /cache: "no-store"/);
+  assert.match(catalogRoute, /private, no-store/);
   assert.doesNotMatch(reader, /WIKISOURCE PUBLIC DOMAIN/);
 });

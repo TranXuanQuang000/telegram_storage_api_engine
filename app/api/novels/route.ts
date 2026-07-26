@@ -33,6 +33,6 @@ export async function GET(request: NextRequest) {
     totalPages,
     sourceLabel: `Mực Chữ Multi-Source + Wikisource · ${catalog.length.toLocaleString("vi-VN")} tác phẩm đã lập chỉ mục`,
   }, {
-    headers: { "Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=1800" },
+    headers: { "Cache-Control": "private, no-store, max-age=0" },
   });
 }
