@@ -528,14 +528,14 @@ class AggregatorService:
                 lambda: p_connector.fetch_story(slug),
             )
         except Exception:
-            for s in (
-                secondary_sources
-                or [
+            fallback_sources = secondary_sources
+            if fallback_sources is None and primary_source != "gutendex":
+                fallback_sources = [
                     source_id
                     for source_id in self.novel_connectors
-                    if is_source_enabled(source_id)
+                    if source_id != "gutendex" and is_source_enabled(source_id)
                 ]
-            ):
+            for s in fallback_sources or []:
                 if s != primary_source:
                     try:
                         conn = self._get_novel_connector(s)
@@ -555,11 +555,15 @@ class AggregatorService:
         sources_to_try = (
             secondary_sources
             if secondary_sources is not None
-            else [
-                source_id
-                for source_id in self.novel_connectors
-                if is_source_enabled(source_id)
-            ]
+            else (
+                []
+                if p_connector.source_id == "gutendex"
+                else [
+                    source_id
+                    for source_id in self.novel_connectors
+                    if source_id != "gutendex" and is_source_enabled(source_id)
+                ]
+            )
         )
         for sec_name in sources_to_try:
             if sec_name.lower() != p_connector.source_id.lower():
@@ -569,7 +573,8 @@ class AggregatorService:
                         sec_conn.source_id,
                         lambda sec_conn=sec_conn: sec_conn.fetch_story(slug),
                     )
-                    sec_tuples.append((sec_name, sec_story.chapters))
+                    if story_identity_score(primary_story, sec_story) >= 0.90:
+                        sec_tuples.append((sec_name, sec_story.chapters))
                 except Exception:
                     pass
 
@@ -653,14 +658,13 @@ class AggregatorService:
 
         primary_conn = self._get_novel_connector(source)
         connectors_to_try = [primary_conn]
-        for s in self.novel_connectors:
-            if not is_source_enabled(s):
-                continue
-            if s == "gutendex" and source != "gutendex" and not slug.startswith("gutenberg-"):
-                continue
-            conn = self._get_novel_connector(s)
-            if conn not in connectors_to_try:
-                connectors_to_try.append(conn)
+        if source != "gutendex":
+            for source_id in self.novel_connectors:
+                if source_id == "gutendex" or not is_source_enabled(source_id):
+                    continue
+                connector = self._get_novel_connector(source_id)
+                if connector not in connectors_to_try:
+                    connectors_to_try.append(connector)
 
         chapter_content: Optional[ChapterContent] = None
         last_exc = None

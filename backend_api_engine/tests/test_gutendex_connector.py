@@ -5,6 +5,7 @@ import pytest
 
 from app.connectors.novel.gutendex import GutendexConnector
 from app.models.story import StoryMedium, StoryStatus
+from app.services.aggregator import AggregatorService
 
 
 BOOK = {
@@ -78,3 +79,20 @@ def test_gutendex_rejects_untrusted_content_host():
 def test_gutendex_rejects_non_numeric_book_identifier():
     with pytest.raises(ValueError, match="Invalid"):
         GutendexConnector._book_id("https://internal.invalid/admin")
+
+
+@pytest.mark.asyncio
+async def test_source_local_gutenberg_slug_never_merges_unrelated_chapters():
+    client = httpx.AsyncClient(transport=httpx.MockTransport(transport))
+    service = AggregatorService(client=client, ttl=0)
+    service.gutendex_connector.base_url = "https://gutendex.test"
+
+    await service.get_novel_catalog(page=1, limit=20, source="gutendex")
+    story, chapters = await service.get_novel_story(
+        "gutenberg-84",
+        primary_source="gutendex",
+    )
+
+    assert story.title.startswith("Frankenstein")
+    assert [chapter.external_id for chapter in chapters] == ["full-text"]
+    await client.aclose()
