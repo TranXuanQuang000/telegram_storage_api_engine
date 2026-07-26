@@ -322,6 +322,28 @@ async def test_html_comic_scraper():
     await connector.close()
 
 
+@pytest.mark.asyncio
+async def test_html_comic_scraper_rejects_arbitrary_urls_before_network():
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500)
+
+    client = httpx.AsyncClient(transport=create_mock_transport(handler))
+    connector = HtmlComicScraper(
+        base_url="https://generic-comic-site.com",
+        client=client,
+    )
+    with pytest.raises(ValueError, match="story id"):
+        await connector.fetch_story("https://127.0.0.1/admin")
+    with pytest.raises(ValueError, match="chapter id"):
+        await connector.fetch_chapter("test-comic", "../private")
+    assert calls == 0
+    await connector.close()
+
+
 # --- Hako Novel Connector Tests ---
 @pytest.mark.asyncio
 async def test_hako_connector():
@@ -770,4 +792,3 @@ async def test_http_retry_handling():
     assert attempts == 4
 
     await connector.close()
-

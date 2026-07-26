@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from app.connectors.comic.mangadex import MangaDexConnector
+from app.connectors.comic.xkcd import XkcdConnector
 from app.connectors.comic.registry import (
     COMIC_SOURCE_POLICIES,
     SourceUnavailableError,
@@ -115,13 +116,45 @@ async def test_mangadex_rejects_unsafe_at_home_base_url(mangadex_payloads):
 def test_comic_source_registry_fails_closed_without_bypass():
     assert COMIC_SOURCE_POLICIES["otruyen"].mode == "direct_api"
     assert COMIC_SOURCE_POLICIES["mangadex"].mode == "direct_api"
+    assert COMIC_SOURCE_POLICIES["xkcd"].mode == "direct_api"
     assert COMIC_SOURCE_POLICIES["nettruyen"].enabled is False
     assert COMIC_SOURCE_POLICIES["cuutruyen"].enabled is False
     assert COMIC_SOURCE_POLICIES["blogtruyen"].enabled is False
 
     direct = create_direct_public_comic_connectors()
-    assert set(direct) == {"otruyen", "mangadex"}
+    assert set(direct) == {"otruyen", "mangadex", "xkcd"}
 
     for source_id in ("nettruyen", "cuutruyen", "blogtruyen"):
         with pytest.raises(SourceUnavailableError, match="disabled"):
             create_comic_connector(source_id)
+
+
+@pytest.mark.asyncio
+async def test_xkcd_official_feed_connector():
+    latest = {
+        "num": 3100,
+        "safe_title": "Safe Feed",
+        "title": "Safe Feed",
+        "img": "https://imgs.xkcd.com/comics/safe_feed.png",
+        "alt": "An attributed comic.",
+        "transcript": "",
+        "year": "2026",
+        "month": "7",
+        "day": "26",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path in {"/info.0.json", "/3100/info.0.json"}:
+            return httpx.Response(200, json=latest)
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    connector = XkcdConnector(client=client)
+    catalog = await connector.fetch_catalog(page=1, limit=1)
+    assert catalog.stories[0].slug == "xkcd-3100"
+    assert catalog.stories[0].raw_metadata["license"] == "CC BY-NC 2.5"
+    chapter = await connector.fetch_chapter("3100", "3100")
+    assert chapter.images == ["https://imgs.xkcd.com/comics/safe_feed.png"]
+    with pytest.raises(ValueError, match="mismatch"):
+        await connector.fetch_chapter("3100", "3099")
+    await connector.close()

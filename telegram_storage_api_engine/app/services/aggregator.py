@@ -15,6 +15,7 @@ from app.connectors.novel.metruyenchu import MetruyenchuConnector
 from app.connectors.novel.tangthuvien import TangThuVienConnector
 from app.connectors.novel.wikidich import WikidichConnector
 from app.connectors.novel.gutendex import GutendexConnector
+from app.connectors.novel.wattpad import WattpadMetadataConnector
 from app.config.sources import is_source_enabled
 from app.engine.merger import SmartChapterMerger
 from app.engine.cleaner import NovelTextCleaner
@@ -46,6 +47,7 @@ class AggregatorService:
         self.tangthuvien_connector = TangThuVienConnector(client=client)
         self.wikidich_connector = WikidichConnector(client=client)
         self.gutendex_connector = GutendexConnector(client=client)
+        self.wattpad_connector = WattpadMetadataConnector(client=client)
         self.novel_connectors = {
             "hako": self.hako_connector,
             "truyenfull": self.truyenfull_connector,
@@ -74,6 +76,7 @@ class AggregatorService:
             connector._client = client
         for connector in self.novel_connectors.values():
             connector._client = client
+        self.wattpad_connector._client = client
 
     def get_cache(self, key: str) -> Optional[Any]:
         entry = self._cache.get(key)
@@ -406,6 +409,18 @@ class AggregatorService:
         return chapter
 
     # --- Novel Methods ---
+    async def inspect_wattpad_story(self, story_id: str) -> Story:
+        cache_key = f"novel:metadata:wattpad:{story_id}"
+        cached = self.get_cache(cache_key)
+        if cached is not None:
+            return cached
+        story = await self._fetch_with_health(
+            "wattpad",
+            lambda: self.wattpad_connector.fetch_story(story_id),
+        )
+        self.set_cache(cache_key, story, ttl=3600)
+        return story
+
     async def get_novel_catalog(self, page: int = 1, limit: int = 20, source: str = "hako") -> CatalogFetchResult:
         if source.strip().lower() == "auto":
             return await self.get_auto_novel_catalog(page=page, limit=limit)

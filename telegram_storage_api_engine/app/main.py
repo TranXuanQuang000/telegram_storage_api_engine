@@ -9,11 +9,13 @@ from fastapi.responses import JSONResponse
 from app.api.v1.otruyen import router as otruyen_router
 from app.api.v1.novel import router as novel_router
 from app.api.v1.sources import router as sources_router
+from app.api.v1.imports import router as imports_router
+from app.api.v1.coverage import router as coverage_router
 
 app = FastAPI(
     title="Multi-Source Aggregator API Engine",
     description="REST API Compatibility Server R3",
-    version="1.3.2",
+    version="1.4.0",
 )
 
 allowed_origins = [
@@ -80,6 +82,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(otruyen_router, prefix="/v1/api", tags=["OTruyen Comic API"])
 app.include_router(novel_router, prefix="/v1/api", tags=["Novel API Extension"])
 app.include_router(sources_router, prefix="/v1/api", tags=["Source Registry"])
+app.include_router(imports_router, prefix="/v1/api", tags=["Public Metadata Import"])
+app.include_router(coverage_router, prefix="/v1/api", tags=["Coverage Audit"])
 
 
 @app.get("/health")
@@ -87,11 +91,13 @@ async def health_check():
     return {
         "status": "ok",
         "service": "aggregator-api-engine",
-        "version": "1.3.2",
+        "version": "1.4.0",
         "capabilities": {
             "comic_drop_in": True,
             "novel_api": True,
             "adaptive_source_selection": True,
+            "chapter_coverage_audit": True,
+            "public_metadata_import": True,
             "telegram_storage": False,
             "api_token": bool(os.getenv("MUC_API_TOKEN", "").strip()),
         },

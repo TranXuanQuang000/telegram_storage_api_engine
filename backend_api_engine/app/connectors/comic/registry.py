@@ -6,6 +6,7 @@ import httpx
 from app.connectors.base import BaseConnector
 from app.connectors.comic.mangadex import MangaDexConnector
 from app.connectors.comic.otruyen import OTruyenConnector
+from app.connectors.comic.xkcd import XkcdConnector
 
 
 ConnectorMode = Literal["direct_api", "upstream_alias", "disabled"]
@@ -39,6 +40,13 @@ COMIC_SOURCE_POLICIES: Dict[str, ComicSourcePolicy] = {
         mode="direct_api",
         enabled=True,
         reason="Official public API; no login required for public catalog and chapter reads.",
+    ),
+    "xkcd": ComicSourcePolicy(
+        source_id="xkcd",
+        source_name="xkcd",
+        mode="direct_api",
+        enabled=True,
+        reason="Official JSON feed with CC BY-NC 2.5 attribution.",
     ),
     "nettruyen": ComicSourcePolicy(
         source_id="nettruyen",
@@ -96,6 +104,8 @@ def create_comic_connector(
         return OTruyenConnector(client=client)
     if effective_source == "mangadex":
         return MangaDexConnector(client=client)
+    if effective_source == "xkcd":
+        return XkcdConnector(client=client)
 
     raise SourceUnavailableError(f"No connector factory is registered for {source_id!r}")
 
@@ -108,4 +118,5 @@ def create_direct_public_comic_connectors(
     return {
         "otruyen": OTruyenConnector(client=client),
         "mangadex": MangaDexConnector(client=client),
+        "xkcd": XkcdConnector(client=client),
     }

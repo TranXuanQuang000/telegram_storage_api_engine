@@ -139,11 +139,11 @@ async def get_otruyen_story(
     """
     try:
         source = source.strip().lower()
-        if source not in {"auto", "otruyen", "mangadex"}:
+        if source not in {"auto", "otruyen", "mangadex", "xkcd"}:
             raise HTTPException(status_code=422, detail="Unsupported or disabled comic source")
         if secondary_sources:
             secondary_sources = [item.strip().lower() for item in secondary_sources]
-            if any(item not in {"otruyen", "mangadex"} for item in secondary_sources):
+            if any(item not in {"otruyen", "mangadex", "xkcd"} for item in secondary_sources):
                 raise HTTPException(status_code=422, detail="Unsupported or disabled secondary comic source")
         if source == "auto":
             story, merged_chapters = await aggregator.get_auto_comic_story(slug)
