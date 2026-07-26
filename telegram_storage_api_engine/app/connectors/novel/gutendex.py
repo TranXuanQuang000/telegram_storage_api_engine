@@ -35,8 +35,17 @@ class GutendexConnector(BaseConnector):
         timeout: float = 15.0,
     ):
         super().__init__(client=client, timeout=timeout)
+        self._book_cache: Dict[int, Dict[str, Any]] = {}
         if base_url:
             self.base_url = base_url.rstrip("/")
+
+    def _remember_book(self, book: Dict[str, Any]) -> None:
+        book_id = book.get("id")
+        if not isinstance(book_id, int):
+            return
+        if len(self._book_cache) >= 512 and book_id not in self._book_cache:
+            self._book_cache.pop(next(iter(self._book_cache)))
+        self._book_cache[book_id] = book
 
     @staticmethod
     def _book_id(identifier: str) -> int:
@@ -115,6 +124,9 @@ class GutendexConnector(BaseConnector):
         response.raise_for_status()
         payload = response.json()
         books = payload.get("results", []) if isinstance(payload, dict) else []
+        for book in books:
+            if isinstance(book, dict):
+                self._remember_book(book)
         stories = [
             self._map_book(book)
             for book in books[:limit]
@@ -134,12 +146,22 @@ class GutendexConnector(BaseConnector):
 
     async def fetch_story(self, identifier: str) -> Story:
         book_id = self._book_id(identifier)
-        response = await self.get(f"{self.base_url}/books/{book_id}/")
+        cached = self._book_cache.get(book_id)
+        if cached is not None:
+            return self._map_book(cached)
+        response = await self.get(
+            f"{self.base_url}/books/",
+            params={"ids": book_id},
+            max_retries=1,
+        )
         response.raise_for_status()
         payload = response.json()
-        if not isinstance(payload, dict) or not payload.get("id"):
+        books = payload.get("results", []) if isinstance(payload, dict) else []
+        book = books[0] if books and isinstance(books[0], dict) else None
+        if not book or not book.get("id"):
             raise ValueError(f"Project Gutenberg book '{book_id}' not found")
-        return self._map_book(payload)
+        self._remember_book(book)
+        return self._map_book(book)
 
     def _select_content_url(self, formats: Dict[str, Any]) -> str:
         preferred_types = (

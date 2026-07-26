@@ -415,7 +415,10 @@ class AggregatorService:
             return cached
 
         connector = self._get_novel_connector(source)
-        result = await connector.fetch_catalog(page=page, limit=limit)
+        result = await self._fetch_with_health(
+            connector.source_id,
+            lambda: connector.fetch_catalog(page=page, limit=limit),
+        )
         self.set_cache(cache_key, result)
         return result
 
@@ -520,7 +523,10 @@ class AggregatorService:
         
         primary_story: Optional[Story] = None
         try:
-            primary_story = await p_connector.fetch_story(slug)
+            primary_story = await self._fetch_with_health(
+                p_connector.source_id,
+                lambda: p_connector.fetch_story(slug),
+            )
         except Exception:
             for s in (
                 secondary_sources
@@ -533,7 +539,10 @@ class AggregatorService:
                 if s != primary_source:
                     try:
                         conn = self._get_novel_connector(s)
-                        primary_story = await conn.fetch_story(slug)
+                        primary_story = await self._fetch_with_health(
+                            conn.source_id,
+                            lambda conn=conn: conn.fetch_story(slug),
+                        )
                         p_connector = conn
                         break
                     except Exception:
@@ -556,7 +565,10 @@ class AggregatorService:
             if sec_name.lower() != p_connector.source_id.lower():
                 try:
                     sec_conn = self._get_novel_connector(sec_name)
-                    sec_story = await sec_conn.fetch_story(slug)
+                    sec_story = await self._fetch_with_health(
+                        sec_conn.source_id,
+                        lambda sec_conn=sec_conn: sec_conn.fetch_story(slug),
+                    )
                     sec_tuples.append((sec_name, sec_story.chapters))
                 except Exception:
                     pass

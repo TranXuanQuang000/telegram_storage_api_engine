@@ -391,7 +391,14 @@ function extractParagraphs(rawHtml: string) {
 }
 
 export async function getNovel(slug: string) {
-  if (isNovelApiSlug(slug)) return await getNovelApiStory(slug);
+  if (isNovelApiSlug(slug)) {
+    try {
+      return await getNovelApiStory(slug);
+    } catch (error) {
+      console.warn("[novels] Multi-source story lookup failed", error);
+      return null;
+    }
+  }
   const bundled = PUBLIC_DOMAIN_NOVELS.find((novel) => novel.slug === slug);
   if (bundled) return bundled;
   const pageId = Number(slug.match(/^wikisource-(\d+)-[a-z0-9-]+$/)?.[1]);
@@ -400,7 +407,14 @@ export async function getNovel(slug: string) {
 }
 
 export async function getNovelChapter(chapterId: string): Promise<NovelChapterContent | null> {
-  if (isNovelApiChapterId(chapterId)) return await getNovelApiChapter(chapterId);
+  if (isNovelApiChapterId(chapterId)) {
+    try {
+      return await getNovelApiChapter(chapterId);
+    } catch (error) {
+      console.warn("[novels] Multi-source chapter lookup failed", error);
+      return null;
+    }
+  }
   const wikiMatch = chapterId.match(/^ws-(\d+)-(\d{1,4})$/);
   if (wikiMatch) {
     const novel = await getWikiNovel(Number(wikiMatch[1]));
