@@ -1,456 +1,495 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
-  AlertOctagon,
-  Cpu,
-  RefreshCw,
-  ShieldAlert,
-  Terminal,
-  Zap,
-  Radio,
-  Server,
-  Globe,
+  AlertTriangle,
+  BookOpen,
   CheckCircle2,
-  Sliders,
+  Clock3,
+  Database,
+  HardDrive,
+  KeyRound,
+  LoaderCircle,
+  LogOut,
+  RefreshCw,
+  Server,
+  ShieldCheck,
+  WifiOff,
 } from "lucide-react";
 
+type ServiceStatus = {
+  ok: boolean;
+  name: string;
+  latencyMs: number;
+  statusCode?: number;
+  database?: string;
+  version?: string | null;
+  error?: string | null;
+};
+
+type SyncState = {
+  _id?: string;
+  sourceKey: string;
+  cursorPage?: number;
+  completedRound?: boolean;
+  imported?: number;
+  updated?: number;
+  lastError?: string | null;
+  lastRunAt?: string | null;
+  manifestCompletedRound?: boolean;
+  manifestUpdated?: number;
+  manifestFailed?: number;
+  manifestLastRunAt?: string | null;
+  manifestLastError?: string | null;
+};
+
+type NovelSource = {
+  id: string;
+  circuit: string;
+  success_ewma: number;
+  latency_ewma_ms: number | null;
+  successes: number;
+  failures: number;
+};
+
+type DashboardData = {
+  status: "success";
+  generatedAt: string;
+  services: {
+    website: ServiceStatus;
+    manga: ServiceStatus;
+    novel: ServiceStatus;
+  };
+  manga: {
+    available: boolean;
+    error?: string;
+    mangaCount: number;
+    chapterManifests: number;
+    cachedChapters: number;
+    queue: Record<string, number | string>;
+    syncStates: SyncState[];
+  };
+  novel: {
+    available: boolean;
+    snapshot: null | {
+      enabled?: boolean;
+      available?: boolean;
+      generated_at?: string;
+      total_items?: number;
+      sources?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    sources: NovelSource[];
+    sourceHealthError?: string | null;
+    capabilities: null | {
+      novelApi: boolean;
+      adaptiveSelection: boolean;
+      coverageAudit: boolean;
+    };
+  };
+};
+
+const TOKEN_KEY = "muc-admin-dashboard-token";
+const REFRESH_INTERVAL_MS = 15_000;
+
+function formatNumber(value: number | undefined) {
+  return new Intl.NumberFormat("vi-VN").format(value ?? 0);
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Chưa chạy";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "short",
+    timeStyle: "medium",
+  }).format(date);
+}
+
+function sourceLabel(source: string) {
+  const labels: Record<string, string> = {
+    nettruyen: "NetTruyen",
+    truyenqq: "TruyenQQ",
+    hako: "Hako / DocLN",
+    truyenfull: "TruyenFull",
+    metruyenchu: "Mê Truyện Chữ",
+    tangthuvien: "Tàng Thư Viện",
+    wikidich: "WikiDich",
+    gutendex: "Project Gutenberg",
+    mangadex: "MangaDex",
+    otruyen: "OTruyen",
+    xkcd: "xkcd",
+  };
+  return labels[source.toLowerCase()] ?? source;
+}
+
+function statusTone(ok: boolean) {
+  return ok
+    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+    : "border-rose-500/30 bg-rose-500/10 text-rose-300";
+}
+
+function ServiceCard({ service, icon: Icon }: { service: ServiceStatus; icon: typeof Server }) {
+  return (
+    <article className="rounded-2xl border border-slate-800 bg-[#0a0f19]/90 p-4 shadow-xl">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{service.name}</p>
+          <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-white">
+            {service.ok ? "Đang hoạt động" : "Mất kết nối"}
+          </p>
+        </div>
+        <div className={`rounded-xl border p-2 ${statusTone(service.ok)}`}>
+          <Icon className="h-5 w-5" aria-hidden="true" />
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-3 text-xs">
+        <span className="text-slate-500">Độ trễ kiểm tra</span>
+        <span className="font-mono text-slate-300">{service.latencyMs} ms</span>
+      </div>
+      {service.error ? <p className="mt-2 text-xs text-rose-300">{service.error}</p> : null}
+    </article>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  icon: typeof Database;
+}) {
+  return (
+    <article className="relative overflow-hidden rounded-2xl border border-cyan-500/15 bg-[#09101b]/90 p-5">
+      <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-cyan-400/5 blur-2xl" />
+      <div className="flex items-center justify-between">
+        <span className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</span>
+        <Icon className="h-4 w-4 text-cyan-400" aria-hidden="true" />
+      </div>
+      <strong className="mt-3 block text-3xl font-black tracking-tight text-white">{value}</strong>
+      <p className="mt-2 text-xs leading-5 text-slate-500">{hint}</p>
+    </article>
+  );
+}
+
 export function CyberNexusDashboard() {
-  const [metrics, setMetrics] = useState<{
-    status: string;
-    error_rate: number;
-    circuit_breaker: string;
-    pipeline_throughput_req_sec: number;
-    avg_latency_ms: number;
-    active_workers: number;
-    asn_proxy_health: Array<{
-      asn: string;
-      active_proxies: number;
-      success_rate: number;
-      status: string;
-    }>;
-  }>({
-    status: "degraded",
-    error_rate: 24.5,
-    circuit_breaker: "OPEN",
-    pipeline_throughput_req_sec: 482,
-    avg_latency_ms: 42,
-    active_workers: 18,
-    asn_proxy_health: [
-      { asn: "AS16509 (Amazon.com)", active_proxies: 42, success_rate: 98.4, status: "healthy" },
-      { asn: "AS14061 (DigitalOcean)", active_proxies: 28, success_rate: 74.2, status: "degraded" },
-      { asn: "AS13335 (Cloudflare)", active_proxies: 60, success_rate: 99.8, status: "healthy" },
-      { asn: "AS15169 (Google)", active_proxies: 15, success_rate: 62.0, status: "circuit_tripped" },
-    ],
-  });
+  const [token, setToken] = useState("");
+  const [draftToken, setDraftToken] = useState("");
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const [circuitTripped, setCircuitTripped] = useState(true);
-  const [logs, setLogs] = useState<Array<{ id: string; time: string; type: "INFO" | "WARN" | "ERROR"; msg: string }>>([
-    { id: "1", time: "12:44:02", type: "INFO", msg: "Scraper worker pool #4 synchronized with OTruyen API endpoint." },
-    { id: "2", time: "12:44:15", type: "WARN", msg: "Subnet 198.51.100.0/24 experiencing 18.4% 429 Too Many Requests response." },
-    { id: "3", time: "12:44:30", type: "ERROR", msg: "Error rate exceeded 20.0%/min threshold (Current: 24.5%/min). CIRCUIT BREAKER TRIPPED." },
-    { id: "4", time: "12:44:31", type: "INFO", msg: "ASN-Aware Proxy Rotation initiated: Swapping pool to AS13335 Cloudflare endpoints." },
-  ]);
-
-  const [activeTab, setActiveTab] = useState<"all" | "errors">("all");
-
-  const fetchHealth = useCallback(async () => {
+  const fetchDashboard = useCallback(async (adminToken: string) => {
+    setLoading(true);
+    setError("");
     try {
-      const res = await fetch("/api/v1/system/health");
-      if (res.ok) {
-        const data = await res.json();
-        setMetrics(data);
-        setCircuitTripped(data.circuit_breaker === "OPEN" || data.error_rate > 20.0);
+      const response = await fetch("/api/admin/dashboard", {
+        headers: { "x-admin-token": adminToken },
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => null) as {
+        message?: string;
+      } | DashboardData | null;
+      if (!response.ok) {
+        if (response.status === 401) {
+          window.sessionStorage.removeItem(TOKEN_KEY);
+          setToken("");
+        }
+        const message = payload && "message" in payload ? payload.message : null;
+        throw new Error(message ?? `Không đọc được trạng thái (HTTP ${response.status})`);
       }
-    } catch {
-      // Retain simulated data
+      setData(payload as DashboardData);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Không tải được dashboard");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const initialFetch = window.setTimeout(() => {
-      void fetchHealth();
+    const restore = window.setTimeout(() => {
+      const saved = window.sessionStorage.getItem(TOKEN_KEY) ?? "";
+      if (saved) {
+        setToken(saved);
+        setDraftToken(saved);
+        void fetchDashboard(saved);
+      }
     }, 0);
-    const interval = setInterval(() => {
-      void fetchHealth();
-    }, 8000);
-    return () => {
-      window.clearTimeout(initialFetch);
-      clearInterval(interval);
-    };
-  }, [fetchHealth]);
+    return () => window.clearTimeout(restore);
+  }, [fetchDashboard]);
 
-  const handleRotateProxies = () => {
-    const newLog = {
-      id: Date.now().toString(),
-      time: new Date().toLocaleTimeString(),
-      type: "INFO" as const,
-      msg: "MỞ RỘNG POOL PROXY: Đã chuyển sang cụm Subnet AS16509 sạch. Tỷ lệ lỗi đã giảm về 3.2%.",
-    };
-    setLogs((prev) => [newLog, ...prev]);
-    setCircuitTripped(false);
-    setMetrics((prev) => ({
-      ...prev,
-      status: "healthy",
-      error_rate: 3.2,
-      circuit_breaker: "CLOSED",
-    }));
-  };
+  useEffect(() => {
+    if (!token) return;
+    const interval = window.setInterval(() => void fetchDashboard(token), REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [fetchDashboard, token]);
 
-  const handleForceTrip = () => {
-    const newLog = {
-      id: Date.now().toString(),
-      time: new Date().toLocaleTimeString(),
-      type: "ERROR" as const,
-      msg: "CẢNH BÁO THỦ CÔNG: Kích hoạt Circuit Breaker khẩn cấp bởi DevOps Engineer.",
-    };
-    setLogs((prev) => [newLog, ...prev]);
-    setCircuitTripped(true);
-    setMetrics((prev) => ({
-      ...prev,
-      status: "degraded",
-      circuit_breaker: "OPEN",
-      error_rate: 28.9,
-    }));
-  };
+  const totalNovelItems = useMemo(() => {
+    const value = data?.novel.snapshot?.total_items;
+    return typeof value === "number" ? value : 0;
+  }, [data]);
 
-  const filteredLogs = logs.filter((log) => (activeTab === "errors" ? log.type === "ERROR" : true));
+  function unlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = draftToken.trim();
+    if (!value) return;
+    window.sessionStorage.setItem(TOKEN_KEY, value);
+    setToken(value);
+    void fetchDashboard(value);
+  }
+
+  function lock() {
+    window.sessionStorage.removeItem(TOKEN_KEY);
+    setToken("");
+    setDraftToken("");
+    setData(null);
+    setError("");
+  }
+
+  if (!token) {
+    return (
+      <section className="mx-auto mt-14 max-w-md rounded-3xl border border-cyan-500/20 bg-[#080d16]/95 p-6 shadow-[0_0_60px_rgba(34,211,238,0.08)]">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
+          <KeyRound className="h-7 w-7" aria-hidden="true" />
+        </div>
+        <h1 className="mt-5 text-center text-xl font-black text-white">Trung tâm vận hành</h1>
+        <p className="mt-2 text-center text-sm leading-6 text-slate-400">
+          Nhập mã quản trị để xem số liệu crawler thật. Mã chỉ được giữ trong tab hiện tại.
+        </p>
+        <form className="mt-6 space-y-3" onSubmit={unlock}>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400" htmlFor="admin-token">
+            Mã quản trị
+          </label>
+          <input
+            id="admin-token"
+            type="password"
+            autoComplete="off"
+            value={draftToken}
+            onChange={(event) => setDraftToken(event.target.value)}
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
+            placeholder="••••••••••••••••"
+          />
+          <button type="submit" className="button button--ink w-full justify-center">
+            <ShieldCheck className="h-4 w-4" aria-hidden="true" /> Mở dashboard
+          </button>
+        </form>
+        {error ? <p className="mt-4 text-center text-sm text-rose-300">{error}</p> : null}
+      </section>
+    );
+  }
 
   return (
-    <div className="w-full flex flex-col space-y-6 font-mono text-slate-100 p-2 sm:p-4">
-      {/* Header HUD */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-5 bg-[#0b0f19] border border-slate-800 rounded-2xl shadow-2xl relative overflow-hidden">
-        <div className="flex items-center gap-3.5 z-10">
-          <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-            <Activity className="w-6 h-6 animate-pulse" aria-hidden="true" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-white tracking-wider uppercase">Cyber-Nexus HUD</h1>
-              <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                DevOps Pipeline Monitor
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">Real-time scraping particle stream &amp; circuit breaker resiliency</p>
-          </div>
-        </div>
-
-        {/* Live Status Indicator */}
-        <div className="flex items-center gap-3 z-10">
-          <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
-              circuitTripped
-                ? "bg-rose-950/80 border-rose-500/50 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)] animate-pulse"
-                : "bg-emerald-950/80 border-emerald-500/50 text-emerald-300"
-            }`}
-          >
-            <Radio className="w-4 h-4" aria-hidden="true" />
-            <span>CIRCUIT STATUS: {circuitTripped ? "OPEN (TRIPPED)" : "CLOSED (NORMAL)"}</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => { void fetchHealth(); }}
-            className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition-colors"
-            title="Reload telemetry"
-          >
-            <RefreshCw className="w-4 h-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-
-      {/* Circuit Breaker Alert Banner */}
-      {circuitTripped && (
-        <div className="p-4 rounded-2xl bg-rose-950/90 border-2 border-rose-500 text-rose-200 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-4 animate-pulse">
+    <section className="w-full space-y-6 p-2 font-mono text-slate-100 sm:p-4">
+      <header className="relative overflow-hidden rounded-3xl border border-slate-800 bg-[#080d16]/95 p-5 shadow-2xl">
+        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <AlertOctagon className="w-8 h-8 text-rose-400 shrink-0" aria-hidden="true" />
+            <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-cyan-300">
+              <Activity className="h-6 w-6" aria-hidden="true" />
+            </div>
             <div>
-              <h2 className="font-bold text-sm text-white uppercase tracking-wider">
-                CẢNH BÁO NGẮT MẠCH TỰ ĐỘNG (Circuit Breaker Tripped)
-              </h2>
-              <p className="text-xs text-rose-300">
-                Tỷ lệ lỗi hiện tại đạt <strong className="text-white font-bold">{metrics.error_rate}%/phút</strong>{" "}
-                (vượt ngưỡng 20.0%/min). Hệ thống đã tự động ngắt kết nối để tránh bị ban IP.
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-black uppercase tracking-wider text-white">Mục Truyện Operations</h1>
+                <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">
+                  DỮ LIỆU THẬT
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Cập nhật tự động mỗi 15 giây · Lần cuối: {formatDate(data?.generatedAt)}
               </p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 shrink-0 w-full md:w-auto">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handleRotateProxies}
-              className="w-full md:w-auto px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg transition-all"
+              disabled={loading}
+              onClick={() => void fetchDashboard(token)}
+              className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 transition hover:border-cyan-500/50 disabled:opacity-60"
             >
-              Rotate Proxy Pool &amp; Reset
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
+              Làm mới
+            </button>
+            <button
+              type="button"
+              onClick={lock}
+              className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-400 transition hover:text-white"
+            >
+              <LogOut className="h-4 w-4" aria-hidden="true" /> Khóa
             </button>
           </div>
         </div>
-      )}
+      </header>
 
-      {/* Main Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Metric 1 */}
-        <div className="p-4 rounded-2xl bg-[#0b0f19] border border-slate-800 space-y-2">
-          <div className="flex justify-between text-xs text-slate-400">
-            <span>PIPELINE THROUGHPUT</span>
-            <Zap className="w-4 h-4 text-cyan-400" aria-hidden="true" />
-          </div>
-          <div className="text-2xl font-bold text-white flex items-baseline gap-1">
-            {metrics.pipeline_throughput_req_sec} <span className="text-xs text-slate-400 font-normal">req/s</span>
-          </div>
-          <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-cyan-400 h-full w-[78%]" />
-          </div>
+      {error ? (
+        <div className="flex items-center gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
+          <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden="true" />
+          {error}
         </div>
+      ) : null}
 
-        {/* Metric 2 */}
-        <div className="p-4 rounded-2xl bg-[#0b0f19] border border-slate-800 space-y-2">
-          <div className="flex justify-between text-xs text-slate-400">
-            <span>AVG LATENCY</span>
-            <Server className="w-4 h-4 text-blue-400" aria-hidden="true" />
-          </div>
-          <div className="text-2xl font-bold text-white flex items-baseline gap-1">
-            {metrics.avg_latency_ms} <span className="text-xs text-slate-400 font-normal">ms</span>
-          </div>
-          <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-blue-400 h-full w-[42%]" />
-          </div>
+      {!data && loading ? (
+        <div className="flex min-h-64 items-center justify-center gap-3 text-slate-400">
+          <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" /> Đang lấy telemetry…
         </div>
+      ) : null}
 
-        {/* Metric 3 */}
-        <div className="p-4 rounded-2xl bg-[#0b0f19] border border-slate-800 space-y-2">
-          <div className="flex justify-between text-xs text-slate-400">
-            <span>ACTIVE WORKERS</span>
-            <Cpu className="w-4 h-4 text-purple-400" aria-hidden="true" />
+      {data ? (
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <ServiceCard service={data.services.website} icon={ShieldCheck} />
+            <ServiceCard service={data.services.manga} icon={Server} />
+            <ServiceCard service={data.services.novel} icon={BookOpen} />
           </div>
-          <div className="text-2xl font-bold text-white flex items-baseline gap-1">
-            {metrics.active_workers} <span className="text-xs text-slate-400 font-normal">workers</span>
-          </div>
-          <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-purple-400 h-full w-[90%]" />
-          </div>
-        </div>
 
-        {/* Metric 4 */}
-        <div className="p-4 rounded-2xl bg-[#0b0f19] border border-slate-800 space-y-2">
-          <div className="flex justify-between text-xs text-slate-400">
-            <span>ERROR RATE (%/MIN)</span>
-            <ShieldAlert className="w-4 h-4 text-rose-400" aria-hidden="true" />
-          </div>
-          <div
-            className={`text-2xl font-bold flex items-baseline gap-1 ${
-              metrics.error_rate > 20.0 ? "text-rose-400" : "text-emerald-400"
-            }`}
-          >
-            {metrics.error_rate}% <span className="text-xs text-slate-400 font-normal">threshold 20%</span>
-          </div>
-          <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
-            <div
-              className={`h-full ${metrics.error_rate > 20.0 ? "bg-rose-500" : "bg-emerald-400"}`}
-              style={{ width: `${Math.min(metrics.error_rate * 3, 100)}%` }}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Kho truyện tranh"
+              value={formatNumber(data.manga.mangaCount)}
+              hint="Số bộ đã nhập vào MongoDB catalog."
+              icon={Database}
+            />
+            <StatCard
+              label="Manifest chapter"
+              value={formatNumber(data.manga.chapterManifests)}
+              hint="Chapter đã lập danh sách ảnh; không đồng nghĩa mọi ảnh đã tải."
+              icon={BookOpen}
+            />
+            <StatCard
+              label="Chapter đã cache"
+              value={formatNumber(data.manga.cachedChapters)}
+              hint="Nội dung chapter đã sẵn sàng trong cache."
+              icon={HardDrive}
+            />
+            <StatCard
+              label="Kho truyện chữ"
+              value={formatNumber(totalNovelItems)}
+              hint={data.novel.snapshot?.available ? "Snapshot đang được backend sử dụng." : "Snapshot production chưa sẵn sàng."}
+              icon={BookOpen}
             />
           </div>
-        </div>
-      </div>
 
-      {/* Visual Data Stream Particle Field */}
-      <div className="p-5 rounded-2xl bg-[#07090e] border border-slate-800 space-y-3 relative overflow-hidden">
-        <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-800/80 pb-2">
-          <span className="flex items-center gap-2 text-slate-200 font-bold">
-            <Globe className="w-4 h-4 text-cyan-400" aria-hidden="true" /> Particle Stream Visualizer (Scraper Pipelines)
-          </span>
-          <span className="text-[11px] text-cyan-400">Streaming 482 packets/s</span>
-        </div>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <article className="overflow-hidden rounded-2xl border border-slate-800 bg-[#080d16]/95 xl:col-span-2">
+              <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+                <div>
+                  <h2 className="font-bold text-white">Tiến trình crawler truyện tranh</h2>
+                  <p className="mt-1 text-xs text-slate-500">Cursor là trang nguồn tiếp theo sẽ được quét.</p>
+                </div>
+                <Database className="h-5 w-5 text-cyan-400" aria-hidden="true" />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] text-left text-xs">
+                  <thead className="bg-slate-950/60 text-slate-500">
+                    <tr>
+                      <th className="px-5 py-3">Nguồn</th>
+                      <th className="px-5 py-3">Trang cursor</th>
+                      <th className="px-5 py-3">Đã nhập</th>
+                      <th className="px-5 py-3">Đã cập nhật</th>
+                      <th className="px-5 py-3">Lần chạy cuối</th>
+                      <th className="px-5 py-3">Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {data.manga.syncStates.map((source) => {
+                      const healthy = !source.lastError;
+                      return (
+                        <tr key={source._id ?? source.sourceKey} className="text-slate-300">
+                          <td className="px-5 py-4 font-bold text-white">{sourceLabel(source.sourceKey)}</td>
+                          <td className="px-5 py-4 text-cyan-300">{formatNumber(source.cursorPage)}</td>
+                          <td className="px-5 py-4">{formatNumber(source.imported)}</td>
+                          <td className="px-5 py-4">{formatNumber(source.updated)}</td>
+                          <td className="px-5 py-4 text-slate-500">{formatDate(source.lastRunAt)}</td>
+                          <td className="px-5 py-4">
+                            <span className={`inline-flex rounded-md border px-2 py-1 ${statusTone(healthy)}`}>
+                              {source.completedRound ? "Đã hết một vòng" : healthy ? "Đang đồng bộ" : "Có lỗi"}
+                            </span>
+                            {source.lastError ? <p className="mt-2 max-w-xs text-rose-300">{source.lastError}</p> : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!data.manga.syncStates.length ? (
+                      <tr><td className="px-5 py-8 text-center text-slate-500" colSpan={6}>{data.manga.error ?? "Chưa có trạng thái nguồn."}</td></tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </article>
 
-        {/* Animated Stream Rails */}
-        <div className="h-28 w-full relative flex items-center justify-between px-6 bg-slate-950 rounded-xl border border-slate-800/60 overflow-hidden">
-          {/* Nodes along stream */}
-          <div className="flex flex-col items-center gap-1 z-10">
-            <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-cyan-400">
-              <Server className="w-5 h-5" aria-hidden="true" />
-            </div>
-            <span className="text-[10px] text-slate-400">Target Scrapers</span>
-          </div>
-
-          <div className="h-0.5 flex-1 mx-4 bg-gradient-to-r from-cyan-500/20 via-blue-500/60 to-emerald-500/20 relative overflow-hidden">
-            {/* Animated particles */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-400 to-transparent w-24 h-full animate-[dataFall_2s_linear_infinite]" />
-          </div>
-
-          <div className="flex flex-col items-center gap-1 z-10">
-            <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-blue-400">
-              <Sliders className="w-5 h-5" aria-hidden="true" />
-            </div>
-            <span className="text-[10px] text-slate-400">Rate Limiter</span>
-          </div>
-
-          <div className="h-0.5 flex-1 mx-4 bg-gradient-to-r from-blue-500/20 via-purple-500/60 to-emerald-500/20 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-400 to-transparent w-24 h-full animate-[dataFall_2.5s_linear_infinite]" />
-          </div>
-
-          <div className="flex flex-col items-center gap-1 z-10">
-            <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-emerald-400">
-              <CheckCircle2 className="w-5 h-5" aria-hidden="true" />
-            </div>
-            <span className="text-[10px] text-slate-400">D1 Storage Node</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ASN Proxy Health Table & Controls */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ASN Table */}
-        <div className="lg:col-span-2 p-5 rounded-2xl bg-[#0b0f19] border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 className="font-bold text-sm text-white flex items-center gap-2">
-              <Globe className="w-4 h-4 text-blue-400" aria-hidden="true" /> Status Cụm ASN / Proxy Subnets
-            </h3>
-            <button
-              type="button"
-              onClick={handleRotateProxies}
-              className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors"
-            >
-              Rotate Subnets
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="text-slate-400 border-b border-slate-800">
-                  <th className="pb-2">ASN / Provider</th>
-                  <th className="pb-2">Active Proxies</th>
-                  <th className="pb-2">Success Rate</th>
-                  <th className="pb-2">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {metrics.asn_proxy_health.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 font-semibold text-slate-200">{item.asn}</td>
-                    <td className="py-2.5 text-slate-300">{item.active_proxies} nodes</td>
-                    <td className="py-2.5">
-                      <span
-                        className={
-                          item.success_rate > 90
-                            ? "text-emerald-400 font-bold"
-                            : item.success_rate > 70
-                            ? "text-amber-400"
-                            : "text-rose-400 font-bold"
-                        }
-                      >
-                        {item.success_rate}%
-                      </span>
-                    </td>
-                    <td className="py-2.5">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          item.status === "healthy"
-                            ? "bg-emerald-950 text-emerald-400 border border-emerald-500/30"
-                            : item.status === "degraded"
-                            ? "bg-amber-950 text-amber-400 border border-amber-500/30"
-                            : "bg-rose-950 text-rose-400 border border-rose-500/30"
-                        }`}
-                      >
-                        {item.status.toUpperCase()}
-                      </span>
-                    </td>
-                  </tr>
+            <article className="rounded-2xl border border-slate-800 bg-[#080d16]/95 p-5">
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold text-white">Hàng đợi chapter</h2>
+                <Clock3 className="h-5 w-5 text-violet-400" aria-hidden="true" />
+              </div>
+              <div className="mt-4 space-y-2">
+                {Object.entries(data.manga.queue).map(([key, value]) => (
+                  <div key={key} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-3 text-xs">
+                    <span className="capitalize text-slate-500">{key}</span>
+                    <strong className="text-white">{typeof value === "number" ? formatNumber(value) : String(value)}</strong>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* DevOps Controls */}
-        <div className="p-5 rounded-2xl bg-[#0b0f19] border border-slate-800 space-y-4">
-          <h3 className="font-bold text-sm text-white flex items-center gap-2 border-b border-slate-800 pb-3">
-            <Sliders className="w-4 h-4 text-purple-400" aria-hidden="true" /> Thao tác Khẩn cấp DevOps
-          </h3>
-
-          <div className="space-y-3 text-xs">
-            <button
-              type="button"
-              onClick={handleForceTrip}
-              className="w-full py-2.5 px-3 rounded-xl bg-rose-900/60 hover:bg-rose-800 text-rose-200 border border-rose-500/40 font-bold transition-all text-left flex items-center justify-between"
-            >
-              <span>Ngắt mạch Thủ công (Force Trip)</span>
-              <AlertOctagon className="w-4 h-4 text-rose-400" aria-hidden="true" />
-            </button>
-
-            <button
-              type="button"
-              onClick={handleRotateProxies}
-              className="w-full py-2.5 px-3 rounded-xl bg-blue-900/60 hover:bg-blue-800 text-blue-200 border border-blue-500/40 font-bold transition-all text-left flex items-center justify-between"
-            >
-              <span>Đổi Pool Proxy (ASN Rotation)</span>
-              <RefreshCw className="w-4 h-4 text-blue-400" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Terminal Real-time Log Stream */}
-      <div className="p-5 rounded-2xl bg-[#05070c] border border-slate-800 space-y-3">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-emerald-400" aria-hidden="true" />
-            <span className="font-bold text-sm text-white">Event Log Stream (Monospaced HUD)</span>
+                {!Object.keys(data.manga.queue).length ? <p className="py-6 text-center text-xs text-slate-500">Chưa có dữ liệu queue.</p> : null}
+              </div>
+            </article>
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => setActiveTab("all")}
-              className={`px-2.5 py-1 rounded transition-colors ${
-                activeTab === "all" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              All Events ({logs.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("errors")}
-              className={`px-2.5 py-1 rounded transition-colors ${
-                activeTab === "errors" ? "bg-rose-900/80 text-rose-300 font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Errors Only
-            </button>
-          </div>
-        </div>
-
-        <div className="h-44 overflow-y-auto font-mono text-xs space-y-2 p-3 bg-black rounded-xl border border-slate-900">
-          {filteredLogs.map((log) => (
-            <div key={log.id} className="flex items-start gap-3">
-              <span className="text-slate-500 shrink-0">{log.time}</span>
-              <span
-                className={`font-bold shrink-0 text-[10px] px-1.5 py-0.2 rounded ${
-                  log.type === "ERROR"
-                    ? "bg-rose-950 text-rose-400 border border-rose-500/30"
-                    : log.type === "WARN"
-                    ? "bg-amber-950 text-amber-400 border border-amber-500/30"
-                    : "bg-blue-950 text-blue-400 border border-blue-500/30"
-                }`}
-              >
-                {log.type}
-              </span>
-              <span
-                className={
-                  log.type === "ERROR"
-                    ? "text-rose-300 font-semibold"
-                    : log.type === "WARN"
-                    ? "text-amber-300"
-                    : "text-slate-300"
-                }
-              >
-                {log.msg}
+          <article className="overflow-hidden rounded-2xl border border-slate-800 bg-[#080d16]/95">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+              <div>
+                <h2 className="font-bold text-white">Sức khỏe nguồn truyện chữ</h2>
+                <p className="mt-1 text-xs text-slate-500">Circuit, tỷ lệ thành công, độ trễ và số lỗi quan sát được.</p>
+              </div>
+              <span className={`rounded-md border px-2 py-1 text-xs ${statusTone(Boolean(data.novel.snapshot?.available))}`}>
+                Snapshot: {data.novel.snapshot?.available ? "sẵn sàng" : "chưa publish"}
               </span>
             </div>
-          ))}
-        </div>
-      </div>
-    </div>
+            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+              {data.novel.sources.map((source) => {
+                const healthy = source.circuit === "closed";
+                return (
+                  <div key={source.id} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <strong className="text-sm text-white">{sourceLabel(source.id)}</strong>
+                      {healthy
+                        ? <CheckCircle2 className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+                        : <WifiOff className="h-4 w-4 text-rose-400" aria-hidden="true" />}
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                      <span>Success EWMA</span><span className="text-right text-slate-300">{Math.round(source.success_ewma * 100)}%</span>
+                      <span>Độ trễ</span><span className="text-right text-slate-300">{source.latency_ewma_ms ?? "—"} ms</span>
+                      <span>Thành công / lỗi</span><span className="text-right text-slate-300">{source.successes} / {source.failures}</span>
+                    </div>
+                  </div>
+                );
+              })}
+              {!data.novel.sources.length ? (
+                <p className="col-span-full py-8 text-center text-sm text-slate-500">
+                  {data.novel.sourceHealthError ?? "Chưa có dữ liệu nguồn truyện chữ."}
+                </p>
+              ) : null}
+            </div>
+          </article>
+
+          <aside className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+            <div className="flex gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden="true" />
+              <div>
+                <h2 className="font-bold text-amber-100">Laptop tắt thì tiến trình nào vẫn chạy?</h2>
+                <p className="mt-2 text-sm leading-6 text-amber-100/70">
+                  Backend và crawler được chạy trực tiếp trên Render vẫn tiếp tục. Các script PowerShell/Python đang chạy
+                  trên laptop sẽ dừng ngay khi máy tắt hoặc sleep. Muốn đồng bộ 24/7, scheduler và worker phải được chuyển
+                  hoàn toàn lên Render Worker/Cron Job; dashboard này chỉ giám sát, không giữ script local sống.
+                </p>
+              </div>
+            </div>
+          </aside>
+        </>
+      ) : null}
+    </section>
   );
 }

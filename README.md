@@ -135,3 +135,28 @@ Mực hỗ trợ OpenAI, Anthropic và Gemini. Key chỉ nằm trong `sessionSto
 - `lib/offline-store.ts`: IndexedDB, Cache Storage, quota và progress queue.
 - `db/`: schema D1 và migration.
 - `worker/`: entrypoint Vinext/Cloudflare và scheduled ingestion.
+
+## Dashboard vận hành
+
+Trang `/admin/cyber-nexus` hiển thị dữ liệu thật từ Manga API và Novel API:
+
+- tổng catalog, manifest chapter, chapter cache và hàng đợi;
+- cursor, lần chạy, số bản ghi nhập/cập nhật và lỗi gần nhất của từng nguồn manga;
+- trạng thái backend, MongoDB, snapshot truyện chữ và circuit của từng nguồn novel.
+
+Hai secret bắt buộc phải được cấu hình trên Cloudflare, không ghi vào `wrangler.json`:
+
+```powershell
+npx wrangler pages secret put ADMIN_DASHBOARD_TOKEN --project-name muctruyen
+npx wrangler pages secret put MANGA_API_ADMIN_TOKEN --project-name muctruyen
+```
+
+`ADMIN_DASHBOARD_TOKEN` là mã riêng để mở dashboard. `MANGA_API_ADMIN_TOKEN` phải
+khớp `ADMIN_TOKEN` của service `muc-manga-api` trên Render. Route
+`/api/admin/dashboard` giữ credential backend ở server; trình duyệt không nhận được
+credential này.
+
+Script PowerShell/Python chạy từ laptop sẽ dừng khi Windows tắt hoặc sleep. Muốn
+đồng bộ liên tục, chạy catalog scheduler và manifest worker trên Render Background
+Worker/Cron Job. Cloudflare Pages chỉ phục vụ web và dashboard, không thể giữ một
+script local đang chạy.

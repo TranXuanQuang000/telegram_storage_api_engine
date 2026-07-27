@@ -3,8 +3,8 @@ import { SiteHeader } from "../../../components/SiteHeader";
 import { CyberNexusDashboard } from "../../../components/CyberNexusDashboard";
 
 export const metadata: Metadata = {
-  title: "Cyber-Nexus Dashboard | App Truyen Nova",
-  description: "Bảng điều khiển giám sát pipeline cào dữ liệu, ngắt mạch tự động Circuit Breaker và xoay vòng Proxy Pool.",
+  title: "Trung tâm vận hành | App Truyện Nova",
+  description: "Dashboard quản trị theo dõi kho truyện, tiến trình đồng bộ, cache chapter và sức khỏe các nguồn dữ liệu.",
 };
 
 export default function CyberNexusPage() {
