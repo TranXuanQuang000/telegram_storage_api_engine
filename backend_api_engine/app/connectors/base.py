@@ -1,4 +1,5 @@
 import asyncio
+import random
 import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
@@ -62,7 +63,7 @@ class BaseConnector(ABC):
                             return response
                         delay = max(delay, requested_delay)
                     attempt += 1
-                    await asyncio.sleep(min(delay, 5.0))
+                    await asyncio.sleep(min(delay, 5.0) + random.uniform(0.05, 0.35))
                     continue
                 content_type = response.headers.get("content-type", "").lower()
                 if "text/html" in content_type and (
@@ -74,7 +75,8 @@ class BaseConnector(ABC):
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 if attempt < max_retries:
                     attempt += 1
-                    await asyncio.sleep(backoff_factor * (2 ** (attempt - 1)))
+                    delay = backoff_factor * (2 ** (attempt - 1))
+                    await asyncio.sleep(delay + random.uniform(0.05, 0.35))
                     continue
                 raise exc
 

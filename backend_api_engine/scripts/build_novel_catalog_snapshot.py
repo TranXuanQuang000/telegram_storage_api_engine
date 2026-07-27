@@ -10,6 +10,7 @@ import asyncio
 import gzip
 import json
 import os
+import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,7 +30,14 @@ from app.services.aggregator import AggregatorService  # noqa: E402
 from app.services.catalog_snapshot import SNAPSHOT_SCHEMA_VERSION  # noqa: E402
 
 
-DEFAULT_SOURCES = ("hako", "truyenfull", "metruyenchu", "gutendex")
+DEFAULT_SOURCES = (
+    "hako",
+    "truyenfull",
+    "metruyenchu",
+    "tangthuvien",
+    "wikidich",
+    "gutendex",
+)
 ALLOWED_SOURCES = frozenset(DEFAULT_SOURCES)
 
 
@@ -168,7 +176,8 @@ async def fetch_page(connector, page: int, page_size: int, retries: int):
         except Exception as error:
             failure = error
             if attempt < retries:
-                await asyncio.sleep(min(8.0, 0.5 * (2**attempt)))
+                backoff = min(30.0, 0.75 * (2**attempt))
+                await asyncio.sleep(backoff + random.uniform(0.15, 0.75))
     assert failure is not None
     raise failure
 
@@ -208,7 +217,8 @@ async def hydrate_stories(
                 return story, str(error)[:500]
             finally:
                 if delay_ms:
-                    await asyncio.sleep(delay_ms / 1000)
+                    delay = delay_ms / 1000
+                    await asyncio.sleep(delay + random.uniform(0, delay * 0.35))
 
     hydrated = await asyncio.gather(*(hydrate(story) for story in stories))
     failures = {
@@ -341,7 +351,8 @@ async def sync_source(
         if source_data["completed"]:
             break
         if delay_ms:
-            await asyncio.sleep(delay_ms / 1000)
+            delay = delay_ms / 1000
+            await asyncio.sleep(delay + random.uniform(0, delay * 0.35))
 
     if next_page > max_pages and not source_data.get("completed"):
         source_data["completion_reason"] = "max_pages_guard"
