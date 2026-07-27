@@ -5,6 +5,7 @@ import time
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 import httpx
 
 from app.connectors.comic.otruyen import OTruyenConnector
@@ -34,6 +35,23 @@ class CacheEntry:
         return time.time() > self.expires_at
 
 
+def _source_base_url(env_name: str) -> Optional[str]:
+    value = os.getenv(env_name, "").strip()
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(f"{env_name} must be a clean public HTTPS origin")
+    return value.rstrip("/")
+
+
 class AggregatorService:
     def __init__(self, client: Optional[httpx.AsyncClient] = None, ttl: float = 300.0):
         self.client = client
@@ -41,11 +59,26 @@ class AggregatorService:
         self.otruyen_connector = OTruyenConnector(client=client)
         self.comic_connectors = create_direct_public_comic_connectors(client=client)
         self.comic_connectors["otruyen"] = self.otruyen_connector
-        self.hako_connector = HakoConnector(client=client)
-        self.truyenfull_connector = TruyenFullConnector(client=client)
-        self.metruyenchu_connector = MetruyenchuConnector(client=client)
-        self.tangthuvien_connector = TangThuVienConnector(client=client)
-        self.wikidich_connector = WikidichConnector(client=client)
+        self.hako_connector = HakoConnector(
+            base_url=_source_base_url("HAKO_BASE_URL"),
+            client=client,
+        )
+        self.truyenfull_connector = TruyenFullConnector(
+            base_url=_source_base_url("TRUYENFULL_BASE_URL"),
+            client=client,
+        )
+        self.metruyenchu_connector = MetruyenchuConnector(
+            base_url=_source_base_url("METRUYENCHU_BASE_URL"),
+            client=client,
+        )
+        self.tangthuvien_connector = TangThuVienConnector(
+            base_url=_source_base_url("TANGTHUVIEN_BASE_URL"),
+            client=client,
+        )
+        self.wikidich_connector = WikidichConnector(
+            base_url=_source_base_url("WIKIDICH_BASE_URL"),
+            client=client,
+        )
         self.gutendex_connector = GutendexConnector(client=client)
         self.wattpad_connector = WattpadMetadataConnector(client=client)
         self.novel_connectors = {
@@ -97,6 +130,17 @@ class AggregatorService:
 
     def clear_cache(self):
         self._cache.clear()
+
+    async def close(self):
+        connectors = {
+            *self.comic_connectors.values(),
+            *self.novel_connectors.values(),
+            self.wattpad_connector,
+        }
+        await asyncio.gather(
+            *(connector.close() for connector in connectors),
+            return_exceptions=True,
+        )
 
     async def _fetch_with_health(self, source_id: str, operation):
         if not self.selector.acquire_permission(source_id):
@@ -671,35 +715,21 @@ class AggregatorService:
         if cached is not None:
             return cached
 
-        primary_conn = self._get_novel_connector(source)
-        connectors_to_try = [primary_conn]
-        if source != "gutendex":
-            for source_id in self.novel_connectors:
-                if source_id == "gutendex" or not is_source_enabled(source_id):
-                    continue
-                connector = self._get_novel_connector(source_id)
-                if connector not in connectors_to_try:
-                    connectors_to_try.append(connector)
-
-        chapter_content: Optional[ChapterContent] = None
-        last_exc = None
-        for conn in connectors_to_try:
-            try:
-                res = await conn.fetch_chapter(slug, chapter_no)
-                if res and res.text_content and res.text_content.strip():
-                    res.raw_metadata = {
-                        **(res.raw_metadata or {}),
-                        "source_id": conn.source_id,
-                    }
-                    chapter_content = res
-                    break
-            except Exception as e:
-                last_exc = e
-
-        if chapter_content is None or not chapter_content.text_content or not chapter_content.text_content.strip():
-            if last_exc:
-                raise last_exc
+        connector = self._get_novel_connector(source)
+        chapter_content = await self._fetch_with_health(
+            connector.source_id,
+            lambda: connector.fetch_chapter(slug, chapter_no),
+        )
+        if (
+            chapter_content is None
+            or not chapter_content.text_content
+            or not chapter_content.text_content.strip()
+        ):
             raise ValueError(f"Chapter '{chapter_no}' for novel '{slug}' not found.")
+        chapter_content.raw_metadata = {
+            **(chapter_content.raw_metadata or {}),
+            "source_id": connector.source_id,
+        }
 
         if chapter_content.text_content:
             cleaned_text = self.cleaner.clean(chapter_content.text_content, as_html=as_html)

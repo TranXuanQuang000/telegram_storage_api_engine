@@ -3,6 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.services.aggregator import AggregatorService, get_aggregator_service
 from app.config.sources import SOURCE_SPECS
+from app.connectors.novel.public_html import (
+    SourceAccessRestrictedError,
+    SourceMarkupError,
+)
 from app.models.story import StoryMedium
 
 router = APIRouter()
@@ -20,6 +24,16 @@ def _validate_source(source: str):
     if normalized not in ALLOWED_NOVEL_SOURCES:
         raise HTTPException(status_code=422, detail="Unknown novel source")
     return normalized
+
+
+def _source_error_status(error: Exception) -> int:
+    if isinstance(error, SourceAccessRestrictedError):
+        return 403
+    if isinstance(error, SourceMarkupError):
+        return 502
+    if "not found" in str(error).lower():
+        return 404
+    return 500
 
 
 @router.get("/truyen-chu/danh-sach")
@@ -123,8 +137,7 @@ async def get_novel_story(
             },
         }
     except Exception as e:
-        status_code = 404 if "not found" in str(e).lower() else 500
-        raise HTTPException(status_code=status_code, detail=str(e))
+        raise HTTPException(status_code=_source_error_status(e), detail=str(e))
 
 
 @router.get("/truyen-chu/{slug}/chapter/{chapter_no:path}")
@@ -147,6 +160,7 @@ async def get_novel_chapter(
             as_html=as_html,
         )
 
+        text_content = chapter.text_content or ""
         return {
             "status": "success",
             "data": {
@@ -154,11 +168,12 @@ async def get_novel_chapter(
                 "chapter_id": chapter.external_id,
                 "chapter_number": chapter.chapter_number or chapter_no,
                 "title": chapter.title,
-                "text_content": chapter.text_content,
+                "text_content": text_content,
+                "content": text_content,
+                "word_count": len(text_content.split()),
                 "source": (chapter.raw_metadata or {}).get("source_id", source),
                 "source_url": (chapter.raw_metadata or {}).get("parsed_url"),
             },
         }
     except Exception as e:
-        status_code = 404 if "not found" in str(e).lower() else 500
-        raise HTTPException(status_code=status_code, detail=str(e))
+        raise HTTPException(status_code=_source_error_status(e), detail=str(e))

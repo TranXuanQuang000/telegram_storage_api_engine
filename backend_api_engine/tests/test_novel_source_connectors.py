@@ -6,6 +6,7 @@ import pytest
 
 from app.api.v1.novel import ALLOWED_NOVEL_SOURCES
 from app.connectors.base import BaseConnector
+from app.connectors.novel.hako import HakoConnector
 from app.connectors.novel.metruyenchu import MetruyenchuConnector
 from app.connectors.novel.public_html import SourceAccessRestrictedError
 from app.connectors.novel.tangthuvien import TangThuVienConnector
@@ -208,3 +209,59 @@ async def test_connector_does_not_retry_or_bypass_forbidden_chapter():
         await connector.fetch_chapter("restricted-story", "chuong-1")
     assert requests == 1
     await connector.close()
+
+
+@pytest.mark.asyncio
+async def test_hako_protected_reader_fails_closed_instead_of_returning_ads():
+    requests = 0
+
+    def protected_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(
+            200,
+            text=(
+                "<html><body><div class='title-top'>"
+                "<h4 class='title-item'>Chương 1</h4></div>"
+                "<div id='chapter-content'>"
+                "<p>Nội dung chương</p><div id='chapter-c-protected'></div>"
+                "</div></body></html>"
+            ),
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(protected_handler))
+    connector = HakoConnector(
+        base_url="https://docln.sbs",
+        client=client,
+    )
+    with pytest.raises(SourceAccessRestrictedError, match="protected"):
+        await connector.fetch_chapter("story", "chapter-1")
+    assert connector.base_url == "https://docln.sbs"
+    assert requests == 1
+    await connector.close()
+
+
+@pytest.mark.asyncio
+async def test_chapter_provenance_does_not_fallback_to_an_unverified_story(monkeypatch):
+    service = AggregatorService()
+    other_source_calls = 0
+
+    async def unavailable_chapter(*_args, **_kwargs):
+        raise SourceAccessRestrictedError("protected")
+
+    async def wrong_story_chapter(*_args, **_kwargs):
+        nonlocal other_source_calls
+        other_source_calls += 1
+        raise AssertionError("must not fetch the same slug from an unverified source")
+
+    monkeypatch.setattr(service.hako_connector, "fetch_chapter", unavailable_chapter)
+    monkeypatch.setattr(service.truyenfull_connector, "fetch_chapter", wrong_story_chapter)
+
+    with pytest.raises(SourceAccessRestrictedError, match="protected"):
+        await service.get_novel_chapter(
+            slug="same-looking-slug",
+            chapter_no="chapter-1",
+            source="hako",
+        )
+    assert other_source_calls == 0
+    await service.close()

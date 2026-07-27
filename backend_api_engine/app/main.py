@@ -1,10 +1,16 @@
 import hmac
 import os
+import sys
 import time
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+
+if "pytest" not in sys.modules:
+    load_dotenv()
 
 from app.api.v1.otruyen import router as otruyen_router
 from app.api.v1.novel import router as novel_router
@@ -12,12 +18,21 @@ from app.api.v1.sources import router as sources_router
 from app.api.v1.imports import router as imports_router
 from app.api.v1.coverage import router as coverage_router
 from app.api.v1.archive import router as archive_router
+
+from app.services.aggregator import get_aggregator_service
 from app.services.telegram_storage import TelegramStorageService
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+    await get_aggregator_service().close()
 
 app = FastAPI(
     title="Multi-Source Aggregator API Engine",
     description="REST API Compatibility Server R3",
     version="1.5.0",
+    lifespan=lifespan,
 )
 
 allowed_origins = [
