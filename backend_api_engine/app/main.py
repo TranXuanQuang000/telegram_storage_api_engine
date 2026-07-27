@@ -20,6 +20,7 @@ from app.api.v1.coverage import router as coverage_router
 from app.api.v1.archive import router as archive_router
 
 from app.services.aggregator import get_aggregator_service
+from app.services.catalog_snapshot import get_catalog_snapshot_status
 from app.services.telegram_storage import TelegramStorageService
 
 
@@ -31,7 +32,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="Multi-Source Aggregator API Engine",
     description="REST API Compatibility Server R3",
-    version="1.5.0",
+    version="1.6.0",
     lifespan=lifespan,
 )
 
@@ -117,7 +118,7 @@ async def health_check():
     return {
         "status": "ok",
         "service": "aggregator-api-engine",
-        "version": "1.5.0",
+        "version": "1.6.0",
         "capabilities": {
             "comic_drop_in": True,
             "novel_api": True,
@@ -128,5 +129,6 @@ async def health_check():
             "authorized_archive": True,
             "archive_allowed_sources": sorted(storage.allowed_sources),
             "api_token": bool(os.getenv("MUC_API_TOKEN", "").strip()),
+            "novel_catalog_snapshot": get_catalog_snapshot_status(),
         },
     }

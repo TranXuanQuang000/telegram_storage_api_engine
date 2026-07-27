@@ -50,3 +50,23 @@ Chapter response có cả `text_content` và alias `content`, kèm `word_count`,
 ```powershell
 python -m pytest -q
 ```
+
+## Build full catalog snapshot
+
+The production image can include a resumable catalog snapshot:
+
+```powershell
+python scripts/build_novel_catalog_snapshot.py `
+  --sources hako,truyenfull,metruyenchu,gutendex
+docker build -t muc-novel-api .
+```
+
+The job stops when a source has no more pages, repeats a page, or reaches the
+configured safety guard. Running it again without `--fresh` resumes from the
+checkpoint. The snapshot contains public metadata and chapter manifests only.
+Protected Hako/TruyenFull/MeTruyenChu chapter bodies stay on-demand and bound
+to their verified source. Detail hydration is enabled by default so covers,
+authors and chapter manifests are persisted; `--catalog-only` disables that
+extra pass for a quick diagnostic snapshot. Failed detail records are saved in
+`pending_hydration` and retried on the next run. Gutenberg may return full text
+because it is public domain.

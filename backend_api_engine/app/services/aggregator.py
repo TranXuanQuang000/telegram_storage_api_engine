@@ -24,6 +24,7 @@ from app.engine.matcher import normalize_identity_text, story_identity_score
 from app.engine.source_selector import AdaptiveSourceSelector, SourceCandidate
 from app.models.chapter import ChapterContent, ChapterHeader
 from app.models.story import CatalogFetchResult, Story
+from app.services.catalog_snapshot import get_catalog_snapshot
 
 
 class CacheEntry:
@@ -466,6 +467,9 @@ class AggregatorService:
         return story
 
     async def get_novel_catalog(self, page: int = 1, limit: int = 20, source: str = "hako") -> CatalogFetchResult:
+        snapshot = get_catalog_snapshot(source=source, page=page, limit=limit)
+        if snapshot is not None:
+            return snapshot
         if source.strip().lower() == "auto":
             return await self.get_auto_novel_catalog(page=page, limit=limit)
         cache_key = f"novel:catalog:{source}:{page}:{limit}"
@@ -484,6 +488,9 @@ class AggregatorService:
     async def get_auto_novel_catalog(
         self, page: int = 1, limit: int = 20
     ) -> CatalogFetchResult:
+        snapshot = get_catalog_snapshot(source="auto", page=page, limit=limit)
+        if snapshot is not None:
+            return snapshot
         cache_key = f"novel:catalog:auto:{page}:{limit}"
         cached = self.get_cache(cache_key)
         if cached is not None:
