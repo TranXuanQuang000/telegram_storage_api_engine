@@ -315,7 +315,7 @@ export async function getNovelCatalog(): Promise<NovelSummary[]> {
     }
   };
   const [remoteItems, wikiItems] = await Promise.all([
-    within(getNovelApiCatalog(), 5_500, []),
+    within(getNovelApiCatalog(), 15_000, []),
     within(getWikisourceNovelCatalog(), 2_200, PUBLIC_DOMAIN_NOVELS),
   ]);
   return [
