@@ -96,6 +96,11 @@ jobs:
           data/novel_catalog.snapshot.json.gz
           --allow-partial
 
+      - name: Compact the deployment snapshot
+        run: >-
+          python scripts/compact_novel_catalog_snapshot.py
+          data/novel_catalog.snapshot.json.gz
+
       - name: Publish the new checkpoint
         working-directory: .
         shell: bash
