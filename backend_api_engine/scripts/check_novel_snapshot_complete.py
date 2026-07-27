@@ -13,6 +13,12 @@ def main() -> int:
         "--sources",
         default="hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex",
     )
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Accept a valid progressive snapshot as soon as it contains catalog items",
+    )
+    parser.add_argument("--min-items", type=int, default=1)
     args = parser.parse_args()
     sources = [item.strip() for item in args.sources.split(",") if item.strip()]
 
@@ -42,8 +48,20 @@ def main() -> int:
         summary[source] = entry
         complete = complete and entry["ready"]
 
-    print(json.dumps({"complete": complete, "sources": summary}, ensure_ascii=False))
-    return 0 if complete else 2
+    total_items = sum(entry["items"] for entry in summary.values())
+    usable = total_items >= max(1, args.min_items)
+    print(
+        json.dumps(
+            {
+                "complete": complete,
+                "usable": usable,
+                "total_items": total_items,
+                "sources": summary,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0 if complete or (args.allow_partial and usable) else 2
 
 
 if __name__ == "__main__":

@@ -156,7 +156,7 @@ khớp `ADMIN_TOKEN` của service `muc-manga-api` trên Render. Route
 `/api/admin/dashboard` giữ credential backend ở server; trình duyệt không nhận được
 credential này.
 
-Script PowerShell/Python chạy từ laptop sẽ dừng khi Windows tắt hoặc sleep. Muốn
-đồng bộ liên tục, chạy catalog scheduler và manifest worker trên Render Background
-Worker/Cron Job. Cloudflare Pages chỉ phục vụ web và dashboard, không thể giữ một
-script local đang chạy.
+Script PowerShell/Python local vẫn dừng khi Windows tắt hoặc sleep. Catalog truyện
+chữ production được cập nhật theo lô bởi `.github/workflows/sync-novel-catalog.yml`
+mỗi bốn giờ; checkpoint mới được commit sẽ kích hoạt Render auto-deploy. Vì vậy
+laptop không còn là thành phần bắt buộc để kho production tiếp tục lớn dần.

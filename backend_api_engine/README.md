@@ -70,3 +70,16 @@ authors and chapter manifests are persisted; `--catalog-only` disables that
 extra pass for a quick diagnostic snapshot. Failed detail records are saved in
 `pending_hydration` and retried on the next run. Gutenberg may return full text
 because it is public domain.
+
+Production uses `.github/workflows/sync-novel-catalog.yml` every four hours.
+Each run advances a bounded number of pages per source, accepts a usable partial
+snapshot, commits the checkpoint, and lets Render auto-deploy it. A timeout,
+rate limit, retired domain, or anti-bot page from one source is recorded in
+`source_progress` and does not block the other sources.
+
+Use `--max-new-pages-per-source` to bound one scheduled run and
+`--refresh-completed` to begin a new freshness round after reaching the end.
+The GitHub job intentionally uses `--catalog-only`: catalog metadata is
+pre-indexed, while copyrighted chapter bodies remain on-demand at their
+verified public source. Gutenberg is the exception because its text is public
+domain.

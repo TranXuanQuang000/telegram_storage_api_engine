@@ -33,6 +33,11 @@ def test_snapshot_paginates_source_catalog(tmp_path):
         "source_order": ["hako"],
         "sources": {
             "hako": {
+                "completed": False,
+                "next_page": 4,
+                "pages_crawled": 3,
+                "pending_hydration": {"b": "retry later"},
+                "last_error": None,
                 "items": [
                     story("hako", "a", "A"),
                     story("hako", "b", "B"),
@@ -52,6 +57,17 @@ def test_snapshot_paginates_source_catalog(tmp_path):
     assert page.total == 3
     assert page.has_more is False
     assert page.raw_metadata["mode"] == "deployment_snapshot"
+    status = snapshot.status()
+    assert status["total_items"] == 3
+    assert status["source_counts"] == {"hako": 3}
+    assert status["source_progress"]["hako"] == {
+        "completed": False,
+        "next_page": 4,
+        "pages_crawled": 3,
+        "pending_hydration": 1,
+        "last_error": None,
+        "completion_reason": None,
+    }
 
 
 def test_snapshot_auto_catalog_round_robins_and_deduplicates(tmp_path):

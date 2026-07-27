@@ -20,7 +20,7 @@ Wait-Process -Id $WorkerProcessId -ErrorAction SilentlyContinue
 $env:ENABLED_SOURCES = "hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex"
 $env:HAKO_BASE_URL = "https://docln.sbs"
 $env:TRUYENFULL_BASE_URL = "https://truyenfull.live"
-$env:METRUYENCHU_BASE_URL = "https://metruyenchu.com.vn"
+$env:METRUYENCHU_BASE_URL = "https://metruyenchu.org"
 $env:TANGTHUVIEN_BASE_URL = "https://truyen.tangthuvien.vn"
 $env:WIKIDICH_BASE_URL = "https://wikidich.vn"
 $env:SOURCE_OPERATION_TIMEOUT_SECONDS = "20"

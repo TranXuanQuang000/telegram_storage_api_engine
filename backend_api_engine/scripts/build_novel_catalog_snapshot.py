@@ -71,6 +71,17 @@ def parse_args() -> argparse.Namespace:
         default=int(os.getenv("NOVEL_SYNC_MAX_PAGES_PER_SOURCE", "10000")),
     )
     parser.add_argument(
+        "--max-new-pages-per-source",
+        type=int,
+        default=int(os.getenv("NOVEL_SYNC_MAX_NEW_PAGES_PER_SOURCE", "0")),
+        help="Stop each source after this many new pages in one run; 0 means unlimited",
+    )
+    parser.add_argument(
+        "--refresh-completed",
+        action="store_true",
+        help="Start a new catalog round for sources that completed an earlier round",
+    )
+    parser.add_argument(
         "--page-size",
         type=int,
         default=20,
@@ -113,6 +124,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.max_pages_per_source < 1:
         parser.error("--max-pages-per-source must be positive")
+    if args.max_new_pages_per_source < 0:
+        parser.error("--max-new-pages-per-source cannot be negative")
     if not 0 <= args.delay_ms <= 60_000:
         parser.error("--delay-ms must be between 0 and 60000")
     if not 0 <= args.retries <= 8:
@@ -143,7 +156,13 @@ def load_payload(path: Path, source_order: List[str], fresh: bool) -> Dict[str, 
         payload = json.load(handle)
     if payload.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
         raise ValueError("Existing snapshot uses an unsupported schema")
-    payload["source_order"] = source_order
+    existing_order = payload.get("source_order")
+    ordered_existing = (
+        [item for item in existing_order if isinstance(item, str)]
+        if isinstance(existing_order, list)
+        else []
+    )
+    payload["source_order"] = list(dict.fromkeys([*ordered_existing, *source_order]))
     payload.setdefault("sources", {})
     return payload
 
@@ -236,6 +255,7 @@ async def sync_source(
     *,
     page_size: int,
     max_pages: int,
+    max_new_pages: int,
     delay_ms: int,
     retries: int,
     checkpoint_every: int,
@@ -243,6 +263,7 @@ async def sync_source(
     detail_concurrency: int,
     detail_delay_ms: int,
     output: Path,
+    refresh_completed: bool,
 ) -> Dict[str, Any]:
     connector = service.novel_connectors[source_id]
     source_data = payload["sources"].setdefault(
@@ -285,14 +306,24 @@ async def sync_source(
             source_data["items"] = list(items_by_id.values())
             source_data["pending_hydration"] = pending_hydration
             save_payload(output, payload)
+    if source_data.get("completed") and refresh_completed:
+        source_data["completed"] = False
+        source_data["next_page"] = 1
+        source_data["last_fingerprint"] = ""
+        source_data["completion_reason"] = "refresh_round_started"
+        save_payload(output, payload)
     if source_data.get("completed"):
         return source_data
 
     next_page = max(1, int(source_data.get("next_page") or 1))
     last_fingerprint = str(source_data.get("last_fingerprint") or "")
     pages_since_checkpoint = 0
+    pages_this_run = 0
 
     while next_page <= max_pages:
+        if max_new_pages and pages_this_run >= max_new_pages:
+            source_data["completion_reason"] = "scheduled_batch_limit"
+            break
         try:
             result = await fetch_page(connector, next_page, page_size, retries)
         except Exception as error:
@@ -334,6 +365,7 @@ async def sync_source(
             items_by_id[str(item["external_id"])] = item
         source_data["items"] = list(items_by_id.values())
         source_data["pages_crawled"] = int(source_data.get("pages_crawled") or 0) + 1
+        pages_this_run += 1
         source_data["last_fingerprint"] = fingerprint
         source_data["last_error"] = None
         source_data["pending_hydration"] = pending_hydration
@@ -345,6 +377,7 @@ async def sync_source(
         if not result.has_more:
             source_data["completed"] = True
             source_data["completion_reason"] = "source_has_no_more_pages"
+            source_data["rounds_completed"] = int(source_data.get("rounds_completed") or 0) + 1
         if pages_since_checkpoint >= checkpoint_every or source_data["completed"]:
             save_payload(output, payload)
             pages_since_checkpoint = 0
@@ -372,6 +405,7 @@ async def main() -> int:
                 source_id,
                 page_size=args.page_size,
                 max_pages=args.max_pages_per_source,
+                max_new_pages=args.max_new_pages_per_source,
                 delay_ms=args.delay_ms,
                 retries=args.retries,
                 checkpoint_every=args.checkpoint_every,
@@ -379,6 +413,7 @@ async def main() -> int:
                 detail_concurrency=args.detail_concurrency,
                 detail_delay_ms=args.detail_delay_ms,
                 output=args.output.resolve(),
+                refresh_completed=args.refresh_completed,
             )
     finally:
         await service.close()
@@ -392,6 +427,9 @@ async def main() -> int:
             "last_error": payload["sources"].get(source_id, {}).get("last_error"),
             "pending_hydration": len(
                 payload["sources"].get(source_id, {}).get("pending_hydration", {})
+            ),
+            "completion_reason": payload["sources"].get(source_id, {}).get(
+                "completion_reason"
             ),
         }
         for source_id in args.sources

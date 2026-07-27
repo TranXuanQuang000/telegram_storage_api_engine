@@ -17,7 +17,7 @@ from app.models.story import CatalogFetchResult, ContentRating, Story, StoryMedi
 class MetruyenchuConnector(BaseConnector):
     source_id = "metruyenchu"
     source_name = "MeTruyenChu"
-    base_url = "https://metruyenchu.com.vn"
+    base_url = "https://metruyenchu.org"
     medium = StoryMedium.NOVEL
 
     def __init__(
@@ -60,7 +60,7 @@ class MetruyenchuConnector(BaseConnector):
     async def fetch_catalog(
         self, page: int = 1, limit: int = 20, category: Optional[str] = None
     ) -> CatalogFetchResult:
-        url = f"{self.base_url}/danh-sach?page={page}" if page > 1 else f"{self.base_url}/danh-sach"
+        url = f"{self.base_url}/danh-sach/truyen-moi?page={page}"
         if category:
             url = f"{self.base_url}/the-loai/{category}?page={page}"
 
@@ -69,19 +69,26 @@ class MetruyenchuConnector(BaseConnector):
             response,
             expected_selectors=(
                 ".list-truyen",
+                "#list-page .col-truyen-main .list-truyen",
                 ".story-list",
                 "article.story-item",
                 ".thumb-item",
             ),
         )
 
-        items = soup.select(".list-truyen .item, .story-list .item, article.story-item, .thumb-item")
+        items = soup.select(
+            "#list-page .col-truyen-main .list-truyen .row, "
+            ".list-truyen .item, .story-list .item, "
+            "article.story-item, .thumb-item"
+        )
         if not items:
             items = soup.select(".item, article")
 
         stories = []
         for item in items[:limit]:
-            title_el = item.select_one(".title a, h3 a, h2 a, a.story-name, a")
+            title_el = item.select_one(
+                ".truyen-title a, .title a, h3 a, h2 a, a.story-name, a"
+            )
             if not title_el or not title_el.get("href"):
                 continue
 
@@ -119,12 +126,17 @@ class MetruyenchuConnector(BaseConnector):
             )
             stories.append(story)
 
+        pagination = soup.select_one(".pagination")
+        has_more = bool(
+            pagination
+            and pagination.select_one("li.active + li a, a[rel='next'], a.next")
+        )
         return CatalogFetchResult(
             stories=stories,
             total=len(stories),
             page=page,
             limit=limit,
-            has_more=len(items) >= limit,
+            has_more=has_more or len(stories) >= limit,
             raw_metadata={"url": url},
         )
 

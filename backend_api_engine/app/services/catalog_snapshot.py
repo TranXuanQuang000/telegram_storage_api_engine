@@ -120,9 +120,22 @@ class NovelCatalogSnapshot:
             self._metadata = {
                 "generated_at": payload.get("generated_at"),
                 "source_order": ordered_sources,
+                "total_items": len(self._auto_items),
                 "source_counts": {
                     source_id: len(items)
                     for source_id, items in parsed_sources.items()
+                },
+                "source_progress": {
+                    source_id: {
+                        "completed": bool(source_data.get("completed")),
+                        "next_page": int(source_data.get("next_page") or 1),
+                        "pages_crawled": int(source_data.get("pages_crawled") or 0),
+                        "pending_hydration": len(source_data.get("pending_hydration") or {}),
+                        "last_error": source_data.get("last_error"),
+                        "completion_reason": source_data.get("completion_reason"),
+                    }
+                    for source_id, source_data in source_payload.items()
+                    if isinstance(source_id, str) and isinstance(source_data, dict)
                 },
             }
             self._mtime_ns = stat.st_mtime_ns

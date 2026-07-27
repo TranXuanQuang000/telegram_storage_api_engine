@@ -77,7 +77,15 @@ type DashboardData = {
       available?: boolean;
       generated_at?: string;
       total_items?: number;
-      sources?: Record<string, unknown>;
+      source_counts?: Record<string, number>;
+      source_progress?: Record<string, {
+        completed?: boolean;
+        next_page?: number;
+        pages_crawled?: number;
+        pending_hydration?: number;
+        last_error?: string | null;
+        completion_reason?: string | null;
+      }>;
       [key: string]: unknown;
     };
     sources: NovelSource[];
@@ -451,6 +459,8 @@ export function CyberNexusDashboard() {
             <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
               {data.novel.sources.map((source) => {
                 const healthy = source.circuit === "closed";
+                const progress = data.novel.snapshot?.source_progress?.[source.id];
+                const itemCount = data.novel.snapshot?.source_counts?.[source.id] ?? 0;
                 return (
                   <div key={source.id} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
                     <div className="flex items-center justify-between gap-3">
@@ -460,10 +470,18 @@ export function CyberNexusDashboard() {
                         : <WifiOff className="h-4 w-4 text-rose-400" aria-hidden="true" />}
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                      <span>Đã đưa vào kho</span><span className="text-right font-bold text-cyan-300">{formatNumber(itemCount)}</span>
+                      <span>Trang tiếp theo</span><span className="text-right text-slate-300">{progress?.next_page ?? "—"}</span>
+                      <span>Chờ lấy mục lục</span><span className="text-right text-slate-300">{formatNumber(progress?.pending_hydration)}</span>
                       <span>Success EWMA</span><span className="text-right text-slate-300">{Math.round(source.success_ewma * 100)}%</span>
                       <span>Độ trễ</span><span className="text-right text-slate-300">{source.latency_ewma_ms ?? "—"} ms</span>
                       <span>Thành công / lỗi</span><span className="text-right text-slate-300">{source.successes} / {source.failures}</span>
                     </div>
+                    {progress?.last_error ? (
+                      <p className="mt-3 rounded-lg border border-rose-500/20 bg-rose-500/5 p-2 text-[11px] leading-5 text-rose-300">
+                        {progress.last_error}
+                      </p>
+                    ) : null}
                   </div>
                 );
               })}
@@ -481,9 +499,9 @@ export function CyberNexusDashboard() {
               <div>
                 <h2 className="font-bold text-amber-100">Laptop tắt thì tiến trình nào vẫn chạy?</h2>
                 <p className="mt-2 text-sm leading-6 text-amber-100/70">
-                  Backend và crawler được chạy trực tiếp trên Render vẫn tiếp tục. Các script PowerShell/Python đang chạy
-                  trên laptop sẽ dừng ngay khi máy tắt hoặc sleep. Muốn đồng bộ 24/7, scheduler và worker phải được chuyển
-                  hoàn toàn lên Render Worker/Cron Job; dashboard này chỉ giám sát, không giữ script local sống.
+                  Script PowerShell/Python local vẫn dừng khi máy tắt hoặc sleep. Tuy nhiên lịch đồng bộ catalog truyện chữ
+                  đã được chuyển lên GitHub Actions và tự chạy theo lô; mỗi checkpoint mới sẽ kích hoạt Render triển khai.
+                  Vì vậy kho production tiếp tục lớn dần mà không cần giữ laptop mở.
                 </p>
               </div>
             </div>

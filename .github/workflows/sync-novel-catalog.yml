@@ -1,0 +1,111 @@
+name: Sync progressive novel catalog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */4 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: progressive-novel-catalog
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: backend_api_engine
+    env:
+      ENABLED_SOURCES: hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex
+      HAKO_BASE_URL: https://docln.sbs
+      TRUYENFULL_BASE_URL: https://truyenfull.live
+      METRUYENCHU_BASE_URL: https://metruyenchu.org
+      TANGTHUVIEN_BASE_URL: https://tangthuvien.org
+      WIKIDICH_BASE_URL: https://www.wikidich.com.vn
+      SOURCE_OPERATION_TIMEOUT_SECONDS: "20"
+
+    steps:
+      - name: Check out the production branch
+        uses: actions/checkout@v4
+        with:
+          ref: ui/nova-motion
+          fetch-depth: 2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend_api_engine/requirements.txt
+
+      - name: Install catalog dependencies
+        run: pip install -r requirements.txt
+
+      - name: Advance the Vietnamese catalog sources
+        continue-on-error: true
+        run: >-
+          python scripts/build_novel_catalog_snapshot.py
+          --sources truyenfull,metruyenchu,tangthuvien,wikidich
+          --output data/novel_catalog.snapshot.json.gz
+          --max-pages-per-source 10000
+          --max-new-pages-per-source 30
+          --page-size 20
+          --delay-ms 1800
+          --retries 3
+          --checkpoint-every 10
+          --catalog-only
+          --refresh-completed
+
+      - name: Advance Hako gently
+        continue-on-error: true
+        run: >-
+          python scripts/build_novel_catalog_snapshot.py
+          --sources hako
+          --output data/novel_catalog.snapshot.json.gz
+          --max-pages-per-source 10000
+          --max-new-pages-per-source 2
+          --page-size 20
+          --delay-ms 8000
+          --retries 2
+          --checkpoint-every 1
+          --catalog-only
+          --refresh-completed
+
+      - name: Advance Project Gutenberg
+        continue-on-error: true
+        run: >-
+          python scripts/build_novel_catalog_snapshot.py
+          --sources gutendex
+          --output data/novel_catalog.snapshot.json.gz
+          --max-pages-per-source 10000
+          --max-new-pages-per-source 30
+          --page-size 20
+          --delay-ms 900
+          --retries 3
+          --checkpoint-every 10
+          --catalog-only
+          --refresh-completed
+
+      - name: Validate the progressive snapshot
+        run: >-
+          python scripts/check_novel_snapshot_complete.py
+          data/novel_catalog.snapshot.json.gz
+          --allow-partial
+
+      - name: Publish the new checkpoint
+        working-directory: .
+        shell: bash
+        run: |
+          if git diff --quiet -- backend_api_engine/data/novel_catalog.snapshot.json.gz; then
+            echo "Catalog did not change."
+            exit 0
+          fi
+          git config user.name "muc-catalog-bot"
+          git config user.email "catalog-bot@users.noreply.github.com"
+          git add backend_api_engine/data/novel_catalog.snapshot.json.gz
+          git commit -m "data: advance progressive novel catalog"
+          git push origin HEAD:ui/nova-motion

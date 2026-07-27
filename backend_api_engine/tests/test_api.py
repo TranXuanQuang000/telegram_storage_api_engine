@@ -253,7 +253,10 @@ def api_mock_handler(request: httpx.Request) -> httpx.Response:
 
 
 @pytest.fixture(autouse=True)
-def setup_aggregator_client():
+def setup_aggregator_client(monkeypatch):
+    # API fixture tests must exercise the deterministic mock transport rather
+    # than a deployment snapshot that may be present in the working tree.
+    monkeypatch.setenv("NOVEL_CATALOG_SNAPSHOT_ENABLED", "false")
     aggregator = get_aggregator_service()
     aggregator.clear_cache()
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(api_mock_handler))
