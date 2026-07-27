@@ -13,7 +13,7 @@ New-Item -ItemType Directory -Force -Path $LogDirectory | Out-Null
 
 $env:ENABLED_SOURCES = "hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex"
 $env:HAKO_BASE_URL = "https://docln.sbs"
-$env:TRUYENFULL_BASE_URL = "https://truyenfull.live"
+$env:TRUYENFULL_BASE_URL = "https://truyenfull.win"
 $env:METRUYENCHU_BASE_URL = "https://metruyenchu.org"
 $env:TANGTHUVIEN_BASE_URL = "https://truyen.tangthuvien.vn"
 $env:WIKIDICH_BASE_URL = "https://wikidich.vn"

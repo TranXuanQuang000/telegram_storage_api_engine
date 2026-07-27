@@ -22,7 +22,7 @@ jobs:
     env:
       ENABLED_SOURCES: hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex
       HAKO_BASE_URL: https://docln.sbs
-      TRUYENFULL_BASE_URL: https://truyenfull.live
+      TRUYENFULL_BASE_URL: https://truyenfull.win
       METRUYENCHU_BASE_URL: https://metruyenchu.org
       TANGTHUVIEN_BASE_URL: https://tangthuvien.org
       WIKIDICH_BASE_URL: https://www.wikidich.com.vn

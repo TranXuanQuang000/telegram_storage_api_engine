@@ -142,7 +142,13 @@ class TruyenFullConnector(BaseConnector):
             expected_selectors=("h3.title", "h1.title", ".title", "h1"),
         )
 
-        title_el = soup.select_one("h3.title, h1.title, .title, h1")
+        title_el = (
+            soup.select_one(".col-info-desc h3.title")
+            or soup.select_one("#truyen h3.title")
+            or soup.select_one("h1.title")
+            or soup.select_one("h3.title")
+            or soup.select_one("h1")
+        )
         if not title_el:
             raise SourceMarkupError("TruyenFull story title markup was not found")
         title = self._clean_text(title_el.get_text())
