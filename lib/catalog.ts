@@ -5,6 +5,19 @@ import { getCommunityReviewSignals } from "./review-signals";
 import { normalizeTitle, titleSimilarity } from "./search-utils";
 import { getMangaDexLatestStories, getMangaDexStory, searchMangaDexStories } from "./sources/mangadex";
 import { comicApiCandidates, contentApiHeaders, contentApiSourceName, getContentApiConfiguration } from "./content-api";
+import {
+  encodeMangaApiChapterId,
+  getMangaApiCatalog,
+  getMangaApiChapter,
+  getMangaApiDetail,
+  getMangaApiGenre,
+  isMangaApiCatalogProvider,
+  MangaApiError,
+  resolveMangaApiApiUrl,
+  resolveMangaApiCoverUrl,
+  searchMangaApi,
+  type MangaApiCatalog,
+} from "./sources/manga-api";
 
 export type StoryCardData = {
   medium?: "comic" | "novel";
@@ -88,7 +101,7 @@ type OTruyenCategory = { name?: string; slug?: string };
 type OTruyenChapter = {
   chapter_name?: string;
   chapter_title?: string;
-  chapter_api_data?: string;
+  chapter_api_data?: string | null;
   source_name?: string;
 };
 type OTruyenItem = {
@@ -97,7 +110,7 @@ type OTruyenItem = {
   slug?: string;
   origin_name?: string[];
   status?: string;
-  thumb_url?: string;
+  thumb_url?: string | null;
   category?: OTruyenCategory[];
   updatedAt?: string;
   chaptersLatest?: OTruyenChapter[];
@@ -202,7 +215,10 @@ function stripHtml(value?: string): string {
     .trim();
 }
 
-function chapterIdFromUrl(url?: string): string | null {
+function chapterIdFromUrl(url?: string | null): string | null {
+  if (isMangaApiCatalogProvider() && url?.startsWith("/api/v1/")) {
+    return encodeMangaApiChapterId(url, "?");
+  }
   const match = url?.match(/\/chapter\/([^/?#]+)/i);
   if (!match?.[1]) return null;
   try {
@@ -240,11 +256,18 @@ function normalizeItem(item: OTruyenItem, cdn = DEFAULT_CDN): StoryCardData {
   const provisionalScore = provisionalCatalogScore(item);
   const genreSlugs = item.category?.map((category) => category.slug).filter(Boolean) as string[] ?? [];
   const discoveryTags = deriveAutoTags(genreSlugs, item.name).map((tag) => tag.slug);
-  const coverPath = item.thumb_url?.startsWith("http")
-    ? item.thumb_url
-    : item.thumb_url
-      ? `${cdn}/uploads/comics/${item.thumb_url}`
-      : null;
+  const coverPath = isMangaApiCatalogProvider()
+    ? resolveMangaApiCoverUrl(item.thumb_url ?? null)
+    : item.thumb_url?.startsWith("http")
+      ? item.thumb_url
+      : item.thumb_url
+        ? `${cdn}/uploads/comics/${item.thumb_url}`
+        : null;
+  const latestChapterId = latest?.chapter_api_data
+    ? isMangaApiCatalogProvider()
+      ? encodeMangaApiChapterId(latest.chapter_api_data, latest.chapter_name ?? "?")
+      : chapterIdFromUrl(latest.chapter_api_data)
+    : null;
 
   return {
     id: item._id ?? slug,
@@ -258,7 +281,7 @@ function normalizeItem(item: OTruyenItem, cdn = DEFAULT_CDN): StoryCardData {
     genreSlugs,
     discoveryTags,
     latestChapter: latest?.chapter_name ?? null,
-    latestChapterId: chapterIdFromUrl(latest?.chapter_api_data),
+    latestChapterId,
     updatedAt: item.updatedAt ?? new Date(0).toISOString(),
     score: score?.value ?? provisionalScore,
     scoreSource: score?.source ?? "Điểm Mực tạm tính · độ mới và độ đầy đủ dữ liệu",
@@ -311,6 +334,45 @@ async function fetchComicJson<T>(path: string, timeoutMs = 5_000, ttlMs = 2 * 60
     }
   }
   throw failure instanceof Error ? failure : new Error("Comic API is unavailable");
+}
+
+function mangaApiPayload(payload: MangaApiCatalog): OTruyenListPayload {
+  return {
+    data: {
+      items: payload.data.items,
+      params: {
+        pagination: {
+          currentPage: payload.data.params.pagination.currentPage,
+          totalItems: payload.data.params.pagination.totalItems,
+          totalItemsPerPage: payload.data.params.pagination.totalItemsPerPage,
+          totalPages: payload.data.params.pagination.pageRanges
+            ?? payload.data.params.pagination.totalPages
+            ?? Math.ceil(
+              payload.data.params.pagination.totalItems
+              / payload.data.params.pagination.totalItemsPerPage,
+            ),
+        },
+      },
+      titlePage: "Manga API · NetTruyen + TruyenQQ",
+    },
+  };
+}
+
+async function fetchProviderList(
+  path: string,
+  timeoutMs = 5_000,
+  ttlMs = 2 * 60 * 1_000,
+): Promise<OTruyenListPayload> {
+  if (!isMangaApiCatalogProvider()) {
+    return await fetchComicJson<OTruyenListPayload>(path, timeoutMs, ttlMs);
+  }
+  const parsed = new URL(path, "https://manga-api.invalid");
+  const page = Math.max(1, Number.parseInt(parsed.searchParams.get("page") ?? "1", 10) || 1);
+  const keyword = parsed.searchParams.get("keyword") ?? "";
+  const genreMatch = parsed.pathname.match(/^\/the-loai\/([a-z0-9-]+)$/);
+  if (parsed.pathname === "/tim-kiem") return mangaApiPayload(await searchMangaApi(keyword, page));
+  if (genreMatch) return mangaApiPayload(await getMangaApiGenre(genreMatch[1], page));
+  return mangaApiPayload(await getMangaApiCatalog(page, 24));
 }
 
 export async function enrichStoriesWithRatings(stories: StoryCardData[]): Promise<StoryCardData[]> {
@@ -386,9 +448,7 @@ export async function getCommunityRecommendations(): Promise<StoryCardData[]> {
 
 export async function getHomeStories(): Promise<StoryCardData[]> {
   try {
-    const payload = await fetchComicJson<{
-      data?: { items?: OTruyenItem[]; APP_DOMAIN_CDN_IMAGE?: string };
-    }>("/home", 2_500);
+    const payload = await fetchProviderList("/home", 2_500);
     const items = payload.data?.items ?? [];
     if (!items.length) return fallbackStories;
     return items.map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE));
@@ -402,16 +462,18 @@ export async function searchStories(query: string, page = 1): Promise<StoryCardD
   const [otruyen, mangadex] = await Promise.all([
     (async () => {
       try {
-    const payload = await fetchComicJson<{
-      data?: { items?: OTruyenItem[]; APP_DOMAIN_CDN_IMAGE?: string };
-    }>(`/tim-kiem?keyword=${encodeURIComponent(query.trim())}&page=${Math.max(1, page)}`);
+    const payload = await fetchProviderList(
+      `/tim-kiem?keyword=${encodeURIComponent(query.trim())}&page=${Math.max(1, page)}`,
+    );
     return (payload.data?.items ?? []).map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE));
       } catch {
         const lowered = query.toLocaleLowerCase("vi");
         return fallbackStories.filter((story) => story.title.toLocaleLowerCase("vi").includes(lowered));
       }
     })(),
-    page === 1 ? searchMangaDexStories(query, 20).catch(() => []) : Promise.resolve([]),
+    !isMangaApiCatalogProvider() && page === 1
+      ? searchMangaDexStories(query, 20).catch(() => [])
+      : Promise.resolve([]),
   ]);
   const merged = new Map<string, StoryCardData>();
   for (const story of [...otruyen, ...mangadex]) {
@@ -424,6 +486,9 @@ export async function searchStories(query: string, page = 1): Promise<StoryCardD
 
 export async function getLatestMultiSourceStories(limit = 10): Promise<StoryCardData[]> {
   const safeLimit = Math.min(Math.max(Math.floor(limit) || 10, 1), 20);
+  if (isMangaApiCatalogProvider()) {
+    return (await getDiscoverCatalog({ page: 1 })).stories.slice(0, safeLimit);
+  }
   const [otruyen, mangadex] = await Promise.all([
     getDiscoverCatalog({ page: 1 }).then((catalog) => catalog.stories).catch(() => []),
     getMangaDexLatestStories(safeLimit * 2).catch(() => []),
@@ -459,7 +524,7 @@ async function fuzzyTitleSuggestions(query: string, existing: StoryCardData[]): 
     "/danh-sach/truyen-moi?page=3",
     ...queryTokens.map((token) => `/tim-kiem?keyword=${encodeURIComponent(token)}&page=1`),
   ];
-  const settled = await Promise.allSettled(paths.map((path) => fetchComicJson<OTruyenListPayload>(path, 4_500, 5 * 60 * 1_000)));
+  const settled = await Promise.allSettled(paths.map((path) => fetchProviderList(path, 4_500, 5 * 60 * 1_000)));
   const candidates = [
     ...existing,
     ...settled.flatMap((result) => result.status === "fulfilled"
@@ -492,11 +557,11 @@ export async function getDiscoverCatalog({
   let path = `/danh-sach/truyen-moi?page=${safePage}`;
   if (query.trim()) path = `/tim-kiem?keyword=${encodeURIComponent(query.trim())}&page=${safePage}`;
   else if (primaryGenre && /^[a-z0-9-]{1,80}$/.test(primaryGenre)) path = `/the-loai/${primaryGenre}?page=${safePage}`;
-  else if (status === "completed") path = `/danh-sach/hoan-thanh?page=${safePage}`;
-  else if (status === "ongoing") path = `/danh-sach/dang-phat-hanh?page=${safePage}`;
+  else if (!isMangaApiCatalogProvider() && status === "completed") path = `/danh-sach/hoan-thanh?page=${safePage}`;
+  else if (!isMangaApiCatalogProvider() && status === "ongoing") path = `/danh-sach/dang-phat-hanh?page=${safePage}`;
 
   try {
-    const payload = await fetchComicJson<OTruyenListPayload>(path);
+    const payload = await fetchProviderList(path);
     const pagination = payload.data?.params?.pagination;
     let stories = (payload.data?.items ?? []).map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE));
     const pageSize = pagination?.totalItemsPerPage ?? (stories.length || 24);
@@ -506,7 +571,9 @@ export async function getDiscoverCatalog({
     let searchNotice: CatalogPageData["searchNotice"];
     if (query.trim()) {
       if (safePage === 1) {
-        const extra = await searchMangaDexStories(query, pageSize).catch(() => []);
+        const extra = isMangaApiCatalogProvider()
+          ? []
+          : await searchMangaDexStories(query, pageSize).catch(() => []);
         const merged = new Map<string, StoryCardData>();
         for (const story of [...stories, ...extra]) {
           const key = normalizeTitle(story.title);
@@ -555,7 +622,8 @@ export async function getDiscoverCatalog({
       sourceLabel,
       searchNotice,
     };
-  } catch {
+  } catch (error) {
+    if (isMangaApiCatalogProvider()) throw error;
     const stories = await searchStories(query, safePage);
     return { stories, page: safePage, pageSize: stories.length || 24, totalItems: stories.length, totalPages: 1, sourceLabel: "Bản dự phòng" };
   }
@@ -574,8 +642,8 @@ function discoverListPath({
 }) {
   if (query.trim()) return `/tim-kiem?keyword=${encodeURIComponent(query.trim())}&page=${page}`;
   if (primaryGenre && /^[a-z0-9-]{1,80}$/.test(primaryGenre)) return `/the-loai/${primaryGenre}?page=${page}`;
-  if (status === "completed") return `/danh-sach/hoan-thanh?page=${page}`;
-  if (status === "ongoing") return `/danh-sach/dang-phat-hanh?page=${page}`;
+  if (!isMangaApiCatalogProvider() && status === "completed") return `/danh-sach/hoan-thanh?page=${page}`;
+  if (!isMangaApiCatalogProvider() && status === "ongoing") return `/danh-sach/dang-phat-hanh?page=${page}`;
   return `/danh-sach/truyen-moi?page=${page}`;
 }
 
@@ -612,7 +680,9 @@ export async function getFilteredDiscoverCatalog({
   }
 
   try {
-    const firstPayload = await fetchComicJson<OTruyenListPayload>(discoverListPath({ query, primaryGenre, status, page: 1 }));
+    const firstPayload = await fetchProviderList(
+      discoverListPath({ query, primaryGenre, status, page: 1 }),
+    );
     const upstreamPagination = firstPayload.data?.params?.pagination;
     const upstreamPages = (
       upstreamPagination?.totalPages
@@ -621,7 +691,7 @@ export async function getFilteredDiscoverCatalog({
     const pagesToScan = Math.min(Math.max(upstreamPages, 1), safeScanPages);
     const remaining = await Promise.allSettled(
       Array.from({ length: Math.max(0, pagesToScan - 1) }, (_, index) => index + 2)
-        .map((sourcePage) => fetchComicJson<OTruyenListPayload>(
+        .map((sourcePage) => fetchProviderList(
           discoverListPath({ query, primaryGenre, status, page: sourcePage }),
           5_000,
           5 * 60 * 1_000,
@@ -635,7 +705,9 @@ export async function getFilteredDiscoverCatalog({
       (payload.data?.items ?? []).map((item) => normalizeItem(item, payload.data?.APP_DOMAIN_CDN_IMAGE)),
     );
     if (query.trim()) {
-      const mangaDexCandidates = await searchMangaDexStories(query, 32).catch(() => []);
+      const mangaDexCandidates = isMangaApiCatalogProvider()
+        ? []
+        : await searchMangaDexStories(query, 32).catch(() => []);
       candidates.push(...mangaDexCandidates);
     }
     candidates = [...new Map(candidates.map((story) => [story.id, story])).values()];
@@ -705,7 +777,8 @@ export async function getFilteredDiscoverCatalog({
       sourceLabel: `Chỉ mục hợp nhất ${candidates.length.toLocaleString("vi-VN")} truyện · lọc trước khi chia trang`,
       searchNotice,
     };
-  } catch {
+  } catch (error) {
+    if (isMangaApiCatalogProvider()) throw error;
     const fallback = await getDiscoverCatalog({
       query,
       page,
@@ -722,6 +795,64 @@ export async function getStory(
   options: { includeExternalRating?: boolean } = {},
 ): Promise<StoryDetailData | null> {
   if (!/^[a-z0-9-]{1,160}$/.test(slug)) return null;
+  if (isMangaApiCatalogProvider()) {
+    const { payload, sourceUrl } = await getMangaApiDetail(slug);
+    const item = payload.data.item;
+    const chapterRows = item.chapters.flatMap((server) => server.server_data);
+    const seenChapterNumbers = new Set<string>();
+    const chapters = chapterRows
+      .map((chapter) => ({
+        id: encodeMangaApiChapterId(chapter.chapter_api_data, chapter.chapter_name),
+        number: chapter.chapter_name,
+        title: "",
+        apiUrl: resolveMangaApiApiUrl(chapter.chapter_api_data),
+      }))
+      .filter((chapter) => {
+        if (seenChapterNumbers.has(chapter.number)) return false;
+        seenChapterNumbers.add(chapter.number);
+        return true;
+      })
+      .sort((left, right) =>
+        (Number.parseFloat(right.number) || 0) - (Number.parseFloat(left.number) || 0)
+        || right.number.localeCompare(left.number, "vi", { numeric: true })
+      );
+    const summary = normalizeItem({
+      _id: item._id,
+      name: item.name,
+      slug: item.slug,
+      thumb_url: item.thumb_url,
+      category: item.category.map((category) => ({
+        name: category.name,
+        slug: category.name.toLowerCase().replace(/\s+/g, "-"),
+      })),
+      updatedAt: new Date(0).toISOString(),
+      chaptersLatest: chapters[0]
+        ? [{
+          chapter_name: chapters[0].number,
+          chapter_api_data: chapterRows[0]?.chapter_api_data,
+        }]
+        : [],
+    });
+    const rating = options.includeExternalRating === false
+      ? aggregateRatings([])
+      : await getExternalRating([item.name]);
+    return {
+      ...summary,
+      latestChapter: chapters[0]?.number ?? null,
+      latestChapterId: chapters[0]?.id ?? null,
+      synopsis: "Manga API chưa cung cấp tóm tắt; mục lục và ảnh đọc được lấy từ nguồn aggregator hiện tại.",
+      authors: [],
+      chapters,
+      sourceUrl,
+      sourceName: `Manga API · ${item.current_source.toUpperCase()}${item.is_pinned ? " · PINNED" : ""}`,
+      rating,
+      score: rating.score5 ?? summary.score,
+      scoreSource: rating.score5
+        ? `${rating.isAggregate ? "Tổng hợp" : "Điểm nguồn"} · ${rating.sources.map((source) => source.sourceName).join(" + ")}`
+        : summary.scoreSource,
+      scoreKind: rating.score5 ? "community" : summary.scoreKind,
+    };
+  }
   if (slug.startsWith("mangadex-")) return await getMangaDexStory(slug);
   try {
     const payload = await fetchComicJson<{
@@ -775,6 +906,20 @@ export async function getStory(
 }
 
 export async function getChapterPages(chapterId: string): Promise<ChapterPageData | null> {
+  if (isMangaApiCatalogProvider()) {
+    try {
+      const chapter = await getMangaApiChapter(chapterId);
+      return {
+        chapterId,
+        chapterName: chapter.chapterName,
+        pages: chapter.pages,
+        sourceUrl: chapter.sourceUrl,
+      };
+    } catch (error) {
+      if (error instanceof MangaApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
   if (!/^[a-z0-9._~-]{1,240}$/i.test(chapterId)) return null;
   try {
     type ChapterPayload = {

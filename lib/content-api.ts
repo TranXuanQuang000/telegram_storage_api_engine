@@ -45,7 +45,7 @@ export function getContentApiConfiguration() {
     sourcesRaw
       .split(",")
       .map((source) => source.trim().toLowerCase())
-      .filter((source) => /^(hako|truyenfull|metruyenchu|tangthuvien|wikidich)$/.test(source)),
+      .filter((source) => /^(hako|truyenfull|metruyenchu|tangthuvien|wikidich|gutendex)$/.test(source)),
   )];
   return {
     baseUrl,

@@ -10,7 +10,7 @@
     "MUC_CONTENT_API_URL": "https://telegram-storage-api-engine.onrender.com/v1/api",
     "MUC_CONTENT_API_STRICT": "true",
     "MUC_NOVEL_API_SOURCES": "hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex",
-    "MUC_NOVEL_API_SCAN_PAGES": "1"
+    "MUC_NOVEL_API_SCAN_PAGES": "3"
   },
   "d1_databases": [
     {

@@ -1548,11 +1548,16 @@ html[data-motion-quality="lite"] .story-cover__led::before {
     repeating-linear-gradient(135deg,color-mix(in srgb,var(--novel-accent) 18%,transparent) 0 1px,transparent 1px 18px),
     #0b0d14;
 }
+.novel-card__art { position:absolute; inset:0; overflow:hidden; }
+.novel-card__art::after { content:""; position:absolute; z-index:4; inset:0; background:linear-gradient(180deg,rgba(5,7,12,.04) 24%,rgba(5,7,12,.94) 100%); pointer-events:none; }
+.novel-card__art .story-cover { height:100%; aspect-ratio:auto; border:0; border-radius:0; opacity:.78; box-shadow:none; transform:none; }
+.novel-card__art .story-cover__led { display:none; }
+.novel-card__cover:hover .novel-card__art .story-cover > img { transform:scale(1.045); filter:saturate(1.08) contrast(1.04); }
 .novel-card__cover::before { content:""; position:absolute; inset:.7rem; border:1px solid color-mix(in srgb,var(--novel-accent) 48%,transparent); pointer-events:none; }
-.novel-card__cover > span { position:absolute; top:1rem; right:1rem; color:var(--novel-accent); font:700 .7rem var(--font-mono); }
-.novel-card__cover svg { color:var(--novel-accent); filter:drop-shadow(0 0 12px var(--novel-accent)); }
-.novel-card__cover strong { position:relative; font-size:1.3rem; line-height:1.05; }
-.novel-card__cover small { position:relative; color:var(--muted); }
+.novel-card__cover > span { position:absolute; z-index:5; top:1rem; right:1rem; color:var(--novel-accent); font:700 .7rem var(--font-mono); }
+.novel-card__cover > svg { position:relative; z-index:5; color:var(--novel-accent); filter:drop-shadow(0 0 12px var(--novel-accent)); }
+.novel-card__cover > strong { position:relative; z-index:5; font-size:1.3rem; line-height:1.05; text-shadow:0 2px 16px #000; }
+.novel-card__cover > small { position:relative; z-index:5; color:var(--muted); text-shadow:0 2px 12px #000; }
 .novel-card > div { display:flex; flex-direction:column; gap:1rem; padding:1.4rem; }
 .novel-card > div > p { color:var(--muted); font-size:.84rem; line-height:1.65; flex:1; }
 .novel-card > div > div { display:flex; flex-wrap:wrap; gap:.35rem; }

@@ -1,39 +1,63 @@
-# UI Research — Mực
+# Báo cáo Nghiên cứu UI/UX - App Truyen Nova
 
-Ngày nghiên cứu: 2026-07-23
+**Ngày thực hiện:** 26/07/2026
+**Mục tiêu:** Phân tích 6 nguồn UI/UX tiêu biểu phục vụ thiết kế cho các phân hệ của 'App Truyen Nova' (Aggregator, Canvas/Node UI, Verified Journal, DevOps Monitor).
 
-## Nguồn và bài học
+---
 
-| Nguồn | Vai trò | Quan sát có bằng chứng | Mượn nguyên lý | Không sao chép |
-|---|---|---|---|---|
-| https://truyenqq.com.vn/ | Cùng domain, Việt Nam | Điều hướng ưu tiên thể loại, xếp hạng, tìm truyện, theo dõi; home có truyện mới, 3 chương gần nhất, top đọc nhiều. | Nhịp cập nhật, taxonomy Việt, chapter recency. | Mật độ link quá dày, hierarchy cũ, quảng bá/metadata lẫn nhau. |
-| https://truyenqq.me/ | Cùng domain, Việt Nam | Tách Manga/Manhwa/Manhua, nhiều thể loại, lưới cập nhật và điểm 5 sao. | Shortcuts theo nguồn gốc và chương mới. | Không dùng điểm 0/5 thiếu confidence; không clone layout. |
-| https://mihon.app/ và https://mihon.app/docs/guides/getting-started | Reader đa nguồn | Library, tracking, customization, extensions; global search xuyên nguồn và offline/download là luồng cấp một. | Tách Library / Updates / Browse; download rõ trạng thái; reader settings. | Không đem mô hình extension có quyền rộng lên web; không ẩn rủi ro nguồn. |
-| https://apps.apple.com/us/app/apple-books/id364709193 | Cross-domain reader | Resume, theme/font/spacing, vertical scroll, reading goals, offline. Review người dùng nhấn mạnh mất file/vị trí đọc là lỗi nghiêm trọng. | Chrome yên tĩnh, resume tức thì, quyền kiểm soát offline, accessibility 200%. | Không dùng skeuomorphism giả; không tự xóa download đã pin. |
-| https://www.thestorygraph.com/ | Cross-domain discovery | Tìm theo mood, pace, fiction/genre; recommendation dựa vào preference rõ ràng. | Mood/pace chips và survey tự do; giải thích recommendation. | Không để form preference dài chặn người mới. |
-| https://help.netflix.com/en/node/100639 | Cross-domain personalization | History, rating, similarity, metadata và recency; cá nhân hóa cả row và thứ tự; Continue Watching là row riêng. | Home đổi theo “continuation mode” và “discovery mode”; ưu tiên tín hiệu gần đây. | Không dùng endless horizontal rows hoặc autoplay gây nhiễu. |
-| https://m3.material.io/components/search/overview và https://m3.material.io/components/chips/overview | Design system | Search/chip có trạng thái, vai trò lọc rõ, keyboard/touch cần nhất quán. | Filter chips có include/exclude rõ bằng biểu tượng + chữ; focus-visible. | Không bê nguyên phong cách Material mặc định. |
-| https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Offline_and_background_operation | Chuẩn nền tảng | Service worker, Cache API, background sync/fetch; cache-first và network-first có trade-off. | App-shell offline; chapter cache có manifest và fallback; sync tiến độ khi mạng lại. | Không hứa periodic sync luôn chạy; không coi online flag là tuyệt đối. |
-| https://docs.anilist.co/reference/object/media | Dữ liệu đánh giá | Có averageScore, meanScore, popularity, tags, reviews, recommendations và URL nguồn. | Bảng provenance và phân rã score/tag. | Không mass-hoard; không trình bày score như điểm nội bộ. |
-| https://www.kavitareader.com/ | Experimental/self-hosted reader | Reader webtoon/single/double, smart collections, metadata, OPDS và đề xuất. | Connector OPDS; “on deck”; mode reader theo format. | Không nhồi mọi khả năng quản trị self-hosted vào UI độc giả. |
+## 1. Cùng Domain (Aggregator Model)
+### **Nguồn:** [Line Webtoon](https://www.webtoons.com/) (Truy cập: 26/07/2026)
+* **Phân tích UX:** 
+  - Giao diện tối giản, tập trung tối đa vào cover art của truyện. 
+  - Hệ thống phân loại (Genre, Ranking, Originals) rõ ràng, sử dụng infinite scroll thân thiện với thiết bị di động.
+  - Cơ chế "Daily Pass" và tiến trình đọc được hiển thị trực quan thông qua thanh progress bar siêu mỏng.
+* **Ứng dụng cho Truyen Nova:** 
+  - Áp dụng cấu trúc lưới (grid layout) bất đối xứng cho màn hình Homepage để làm nổi bật các truyện Top Trending.
+  - Tối ưu hóa trải nghiệm vuốt (swipe) và cuộn dọc cho đọc truyện.
 
-## Pattern chung
+## 2. Cross-domain (UI Canvas/Node cho Admin)
+### **Nguồn:** [React Flow](https://reactflow.dev/) (Truy cập: 26/07/2026)
+* **Phân tích UX:** 
+  - Trải nghiệm Canvas tương tác mượt mà với tính năng drag-and-drop, zoom/pan.
+  - Các node được thiết kế dưới dạng thẻ (card) với các "handles" (điểm kết nối) rõ ràng, có trạng thái hover/active dễ nhận biết.
+  - Minimap và bảng điều khiển floating giúp định vị trong không gian canvas lớn.
+* **Ứng dụng cho Truyen Nova:** 
+  - Xây dựng hệ thống quản lý flow phân phối truyện (Admin Panel) bằng UI Node-based. Admin có thể kéo thả các node (Nguồn crawl -> Bộ lọc -> Dịch thuật -> Xuất bản) để thiết lập luồng xử lý tự động.
 
-1. “Đọc tiếp” phải ở trên cùng nếu có lịch sử; discovery đứng đầu khi chưa có dữ liệu.
-2. Tìm kiếm tốt cần hai lớp: câu ngắn tự nhiên và bộ lọc sâu nhìn thấy được.
-3. Library, Updates, Browse và Downloads là bốn ngữ cảnh khác nhau; không gộp thành một lưới vô tận.
-4. Reader tốt giảm chrome, nhớ vị trí chính xác, có nhiều chế độ và trạng thái lỗi/offline rõ.
-5. Đánh giá hữu ích hơn khi có số phiếu, nguồn, freshness và câu “vì sao hợp gu”.
+## 3. Cross-domain (Verified Journal cho User)
+### **Nguồn:** [Substack](https://substack.com/) (Truy cập: 26/07/2026)
+* **Phân tích UX:**
+  - Tập trung vào typography với font chữ serif đọc dễ chịu, tạo cảm giác như một ấn phẩm báo chí uy tín (editorial feel).
+  - Tích hợp huy hiệu (badge) "Bestseller" hoặc "Verified" tinh tế bên cạnh tên tác giả.
+  - Trải nghiệm viết và đọc không bị phân tâm (Distraction-free).
+* **Ứng dụng cho Truyen Nova:**
+  - Thiết kế phân hệ Verified Journal cho các dịch giả/nhóm dịch uy tín. Sử dụng typography chuẩn editorial và huy hiệu Verified (Tick xanh/vàng) để tăng độ tin cậy.
+  - Layout đọc bài review/journal sẽ có khoảng trắng (whitespace) lớn, ưu tiên readability.
 
-## Khoảng trống để khác biệt
+## 4. Cross-domain / Monitor (Dark Mode cho DevOps)
+### **Nguồn:** [Grafana](https://grafana.com/) (Truy cập: 26/07/2026)
+* **Phân tích UX:**
+  - Giao diện Dark mode thuần túy được tinh chỉnh với các mã màu (palette) tối ưu cho việc quan sát dữ liệu trong thời gian dài (giảm mỏi mắt).
+  - Sử dụng các màu neon (xanh lá, đỏ, cam) có độ tương phản cao (High Contrast) để cảnh báo trạng thái hệ thống.
+  - Các dashboard widget được bo góc nhẹ, có đường viền mờ (subtle border) để phân chia không gian.
+* **Ứng dụng cho Truyen Nova:**
+  - Áp dụng vào màn hình Monitor của DevOps: Nền `#111217` kết hợp với các dải màu neon để biểu diễn biểu đồ băng thông, lượng truy cập, và trạng thái server.
+  - Cảnh báo lỗi (Error/Alert) sử dụng hiệu ứng pulse (nhịp đập) để thu hút sự chú ý.
 
-- Web đọc truyện Việt thường mạnh ở tốc độ cập nhật nhưng yếu ở provenance, confidence và trải nghiệm offline có quản lý.
-- Reader đa nguồn mạnh về công cụ nhưng discovery thường lạnh và khó hiểu với người mới.
-- Cơ hội của Mực: kết hợp một “phòng đọc” có cảm xúc với “bàn tra cứu” rất mạnh, đồng thời giải thích AI/điểm số bằng ngôn ngữ bình dân.
+## 5. Design System
+### **Nguồn:** [Vercel Geist Design System](https://vercel.com/design) (Truy cập: 26/07/2026)
+* **Phân tích UX:**
+  - Triết lý thiết kế "Functional & Brutalist", tối giản các chi tiết trang trí không cần thiết.
+  - Bảng màu (color palette) cực kỳ nhất quán, hỗ trợ chuyển đổi Light/Dark mode hoàn hảo.
+  - Hệ thống spacing và typography có tính toán toán học chính xác, tạo cảm giác công nghệ và hiện đại.
+* **Ứng dụng cho Truyen Nova:**
+  - Đồng bộ Design System của toàn ứng dụng theo hướng của Vercel: sử dụng font sans-serif (như Inter hoặc Geist), các component UI (nút, input, modal) thiết kế phẳng, viền mỏng 1px và shadow mềm mại.
 
-## Ba visual grammar
-
-1. **Inkroom Editorial:** warm paper, black ink, vermilion stamp, editorial columns, shelf như zine.
-2. **Midnight Panels:** charcoal canvas, covers cinematic, focus vào reader và ảnh.
-3. **Index Kiosk:** dense utility, mono metadata, command/search first, lime status.
-
+## 6. Experimental / Editorial
+### **Nguồn:** [The Pudding](https://pudding.cool/) (Truy cập: 26/07/2026)
+* **Phân tích UX:**
+  - Kết hợp kể chuyện (storytelling) bằng dữ liệu trực quan thông qua hiệu ứng scroll-telling.
+  - Bố cục phá cách, không gò bó vào grid truyền thống. Đồ họa chuyển động mượt mà khi người dùng tương tác.
+* **Ứng dụng cho Truyen Nova:**
+  - Dành cho các chiến dịch ra mắt truyện độc quyền hoặc các bài báo cáo/tổng kết cuối năm (Year in Review) của người dùng.
+  - Sử dụng hiệu ứng Parallax và Scroll-driven animations để tạo cảm giác nhập vai khi xem giới thiệu về các vũ trụ truyện tranh.

@@ -3,11 +3,14 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { ArrowRight, Check, Search } from "lucide-react";
+import { ConsentBadge } from "./ConsentBadge";
 
 export type ChapterItem = {
   id: string;
   number: string;
   title: string;
+  consent_status?: string;
+  domain?: string;
 };
 
 export function ChapterList({
@@ -128,12 +131,26 @@ export function ChapterList({
           return (
             <li key={chapter.id} className={isRead ? "is-read" : ""} style={isRead ? { opacity: 0.65 } : undefined}>
               <span>{String(index + 1).padStart(2, "0")}</span>
-              <Link
-                href={`/read/${chapter.id}?story=${encodeURIComponent(storySlug)}&title=${encodeURIComponent(storyTitle)}&cover=${encodeURIComponent(coverUrl ?? "")}`}
-                style={{ display: "flex", alignItems: "center", width: "100%" }}
-              >
-                <strong>Chương {chapter.number}</strong>
-                <small style={{ flex: 1, paddingRight: "0.5rem" }}>{chapter.title || "Đọc ngay"}</small>
+              <div style={{ display: "flex", alignItems: "center", width: "100%", gap: "0.5rem" }}>
+                <Link
+                  href={`/read/${chapter.id}?story=${encodeURIComponent(storySlug)}&title=${encodeURIComponent(storyTitle)}&cover=${encodeURIComponent(coverUrl ?? "")}`}
+                  style={{ display: "flex", alignItems: "center", flex: 1, minWidth: 0, textDecoration: "none" }}
+                >
+                  <strong style={{ marginRight: "0.5rem" }}>Chương {chapter.number}</strong>
+                  <small style={{ flex: 1, paddingRight: "0.5rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {chapter.title || "Đọc ngay"}
+                  </small>
+                </Link>
+
+                {/* Consent Badge Trigger */}
+                <ConsentBadge
+                  status={chapter.consent_status || "VERIFIED"}
+                  domain={chapter.domain || "manga-api"}
+                  chapterTitle={`Chương ${chapter.number}: ${chapter.title || "Nội dung"}`}
+                  storyTitle={storyTitle}
+                  size="sm"
+                />
+
                 {isRead ? (
                   <span
                     onClick={(e) => toggleReadStatus(e, chapter.id)}
@@ -147,9 +164,9 @@ export function ChapterList({
                       borderRadius: "0.35rem",
                       background: "rgba(34, 197, 94, 0.15)",
                       color: "#4ade80",
-                      marginRight: "0.5rem",
                       cursor: "pointer",
                       fontWeight: 600,
+                      whiteSpace: "nowrap",
                     }}
                   >
                     <Check style={{ width: "0.75rem", height: "0.75rem" }} /> Đã đọc
@@ -164,15 +181,21 @@ export function ChapterList({
                       borderRadius: "0.35rem",
                       background: "rgba(255, 255, 255, 0.05)",
                       color: "var(--muted)",
-                      marginRight: "0.5rem",
                       cursor: "pointer",
+                      whiteSpace: "nowrap",
                     }}
                   >
                     Chưa đọc
                   </span>
                 )}
-                <ArrowRight aria-hidden="true" />
-              </Link>
+                <Link
+                  href={`/read/${chapter.id}?story=${encodeURIComponent(storySlug)}&title=${encodeURIComponent(storyTitle)}&cover=${encodeURIComponent(coverUrl ?? "")}`}
+                  style={{ color: "var(--signal)", display: "grid", placeItems: "center" }}
+                  aria-label={`Mở đọc Chương ${chapter.number}`}
+                >
+                  <ArrowRight aria-hidden="true" style={{ width: "1rem", height: "1rem" }} />
+                </Link>
+              </div>
             </li>
           );
         })}

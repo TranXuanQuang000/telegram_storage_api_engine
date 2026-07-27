@@ -6,11 +6,11 @@ export async function GET(request: NextRequest) {
   const stories = await getLatestMultiSourceStories(limit);
   return NextResponse.json({
     items: stories,
-    sourceLabel: "OTruyen API + MangaDex API · bản dịch tiếng Việt",
+    sourceLabel: "Manga API · NetTruyen + TruyenQQ",
     generatedAt: new Date().toISOString(),
   }, {
     headers: {
-      "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=600",
+      "Cache-Control": "public, max-age=45, s-maxage=60, stale-while-revalidate=120",
     },
   });
 }

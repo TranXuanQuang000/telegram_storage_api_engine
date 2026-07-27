@@ -36,7 +36,7 @@ export async function RatingPanel({
           ))}
         </ul>
       ) : null}
-      <a className="source-link" href={sourceUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" /> Xem nguồn OTruyen</a>
+      <a className="source-link" href={sourceUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" /> Xem nguồn catalog</a>
     </aside>
   );
 }

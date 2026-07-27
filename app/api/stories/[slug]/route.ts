@@ -2,13 +2,24 @@ import { env } from "cloudflare:workers";
 import { NextResponse } from "next/server";
 import { getStory } from "../../../../lib/catalog";
 import { persistOTruyenStorySnapshot } from "../../../../lib/d1-story-sync";
+import { isMangaApiCatalogProvider, MangaApiError } from "../../../../lib/sources/manga-api";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const story = await getStory(slug);
+  let story;
+  try {
+    story = await getStory(slug);
+  } catch (error) {
+    const status = error instanceof MangaApiError ? error.status : 502;
+    return NextResponse.json({
+      error: "Không tải được truyện",
+      code: error instanceof MangaApiError ? error.code : "STORY_PROVIDER_FAILED",
+      details: null,
+    }, { status, headers: { "Cache-Control": "no-store" } });
+  }
   if (!story) return NextResponse.json({ error: "Không tìm thấy truyện", code: "STORY_NOT_FOUND", details: null }, { status: 404 });
   const runtime = env as unknown as { DB?: D1Database };
-  if (runtime.DB && story.sourceName === "OTruyen API") {
+  if (runtime.DB && !isMangaApiCatalogProvider() && story.sourceName === "OTruyen API") {
     await persistOTruyenStorySnapshot(runtime.DB, story).catch(() => false);
   }
   return NextResponse.json(story, {

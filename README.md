@@ -2,12 +2,33 @@
 
 Mực là web app đọc manga, manhwa và manhua theo hướng “phòng đọc”: catalog có nguồn, tìm kiếm sâu, lịch sử, tủ truyện, tải chương offline và gợi ý AI bằng API key do người dùng tự cung cấp.
 
-## Chạy local
+## Chạy local với Manga API
 
 Yêu cầu Node.js `>=22.13.0`.
 
+Chạy backend trước ở terminal thứ nhất:
+
 ```powershell
+cd "D:\Code\Project\manga-api"
 npm ci
+npm run seed
+npm start
+```
+
+Nếu Redis/Telegram cache được cấu hình, chạy thêm worker trong một terminal riêng:
+
+```powershell
+cd "D:\Code\Project\manga-api"
+npm run worker
+```
+
+Chạy web ở terminal tiếp theo:
+
+```powershell
+cd "D:\Code\Project\App Truyen Nova"
+npm ci
+$env:MANGA_API_BASE_URL="http://localhost:3100"
+$env:CATALOG_PROVIDER="manga-api"
 npm run dev
 ```
 
@@ -26,11 +47,51 @@ npx tsc --noEmit
 npm test
 ```
 
+## Chạy API truyện chữ
+
+API truyện chữ là service FastAPI độc lập trong `backend_api_engine`. Service
+không dùng crawler manga, Telegram hay MongoDB; connector đọc metadata/nội dung
+công khai theo yêu cầu, cache trong bộ nhớ và tự ngắt nguồn lỗi bằng circuit
+breaker.
+
+Terminal riêng:
+
+```powershell
+cd "D:\Code\Project\App Truyen Nova\backend_api_engine"
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Frontend dùng:
+
+```dotenv
+MUC_CONTENT_API_URL=http://localhost:8000/v1/api
+MUC_CONTENT_API_STRICT=true
+MUC_NOVEL_API_SOURCES=hako,gutendex
+MUC_NOVEL_API_SCAN_PAGES=3
+```
+
+Hako dùng origin công khai thay thế `https://docln.sbs`. Catalog, bìa và mục
+lục đang đọc được; chapter có `#chapter-c-protected` bị từ chối rõ ràng thay vì
+trả quảng cáo hoặc cố vượt cơ chế bảo vệ. Gutendex và Wikisource cung cấp lớp
+đọc toàn văn có giấy phép/public-domain ổn định. Các connector TruyenFull,
+MeTruyenChu, Tàng Thư Viện và Wikidich vẫn được giữ sau cấu hình nguồn nhưng
+không bật mặc định khi domain công khai không truy cập được.
+
+Kiểm tra:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod "http://127.0.0.1:8000/v1/api/truyen-chu/danh-sach?page=1&limit=20&source=auto"
+python -m pytest -q
+```
+
 ## Dữ liệu và quyền sử dụng
 
-- Catalog/chapter hiện dùng public API của OTruyen và luôn giữ đường dẫn provenance.
+- Catalog, detail, chapter cache và signed image URL đi qua `manga-api`; web không gọi trực tiếp OTruyen, NetTruyen hoặc TruyenQQ khi `CATALOG_PROVIDER=manga-api`.
 - Điểm 5 sao được đối chiếu theo tên gốc, tên thay thế và tên tiếng Việt từ AniList, Kitsu và dữ liệu MyAnimeList đọc qua Jikan; chỉ hiện nhãn “tổng hợp” khi có ít nhất hai nguồn khớp tên. Nếu chưa tìm thấy điểm công khai, bìa vẫn hiện `~ Điểm Mực tạm tính` dựa trên độ mới và độ đầy đủ metadata để không bị trống, nhưng luôn phân biệt rõ với điểm cộng đồng.
-- Mực không sao chép chapter lên máy chủ riêng. Tải offline dùng Cache Storage trên thiết bị, còn manifest nằm trong IndexedDB.
+- Reader chỉ dùng `proxyUrl`/`image_file` đã ký do Manga API trả về, không render `originalUrl`. Tải offline dùng Cache Storage trên thiết bị, còn manifest nằm trong IndexedDB.
 - Trước khi thêm connector mới, cần kiểm tra điều khoản, robots/rate limit và quyền phân phối của nguồn. Connector không được dùng để vượt paywall hoặc cơ chế bảo vệ truy cập.
 
 ## Hosting và D1
@@ -39,12 +100,14 @@ npm test
 
 Biến môi trường cần cấu hình trên hosting:
 
-- `INGEST_TOKEN`: secret cho hai API quản trị ingestion.
+- `MANGA_API_BASE_URL`: origin server-side của Manga API.
+- `CATALOG_PROVIDER=manga-api`: bật adapter mới và vô hiệu hóa OTruyen ingestion trong web.
+- `INGEST_TOKEN`: secret cho ingestion legacy/rating; không dùng để gọi Manga API.
 - `NEXT_PUBLIC_SITE_URL`: origin công khai dùng cho metadata, ví dụ `https://muc.example.com`.
 
 API quản trị:
 
-- `POST /api/admin/ingest` với header `X-Ingest-Token` và body `{"source":"otruyen","mode":"incremental"}`.
+- `POST /api/admin/ingest` chỉ còn cho rollback legacy; route trả `409` khi Manga API đang quản lý catalog.
 - `POST /api/admin/ratings` với header `X-Ingest-Token` và body `{"limit":6}`.
 
 Cloudflare scheduled handler chạy catalog ingestion rồi làm giàu rating theo lô nhỏ. Lịch cron cần được bật trong cấu hình môi trường triển khai.
@@ -64,7 +127,10 @@ Mực hỗ trợ OpenAI, Anthropic và Gemini. Key chỉ nằm trong `sessionSto
 
 - `app/`: giao diện và API routes.
 - `components/`: reader, discovery, tủ truyện, tải offline và AI settings.
-- `lib/sources/`: connector OTruyen và rating enrichment.
+- `lib/sources/manga-api.ts`: adapter duy nhất cho catalog, search, genre, detail, chapter và signed image URL.
+- `lib/sources/novel-api.ts`: adapter truyện chữ có opaque ID và provenance theo từng chapter.
+- `backend_api_engine/`: source selector, chapter merge/gap filling, HTML cleaner và connector truyện chữ.
+- `lib/sources/otruyen.ts`: adapter legacy chỉ giữ lại để rollback.
 - `lib/ratings.ts`: công thức Bayesian, freshness và confidence.
 - `lib/offline-store.ts`: IndexedDB, Cache Storage, quota và progress queue.
 - `db/`: schema D1 và migration.

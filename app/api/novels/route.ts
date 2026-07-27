@@ -15,11 +15,19 @@ export async function GET(request: NextRequest) {
     const genreOkay = !genre || novel.genres.some((item) => normalizeTitle(item) === normalizeTitle(genre));
     return queryOkay && genreOkay;
   });
+  const sourceOrder = new Map(filtered.map((novel, index) => [novel.slug, index]));
   filtered.sort((left, right) => {
     if (sort === "title") return left.title.localeCompare(right.title, "vi");
     if (sort === "chapters") return right.chapters.length - left.chapters.length || left.title.localeCompare(right.title, "vi");
-    return new Date(right.updatedAt ?? 0).getTime() - new Date(left.updatedAt ?? 0).getTime()
-      || left.title.localeCompare(right.title, "vi");
+    const leftUpdated = left.updatedAt ? new Date(left.updatedAt).getTime() : Number.NaN;
+    const rightUpdated = right.updatedAt ? new Date(right.updatedAt).getTime() : Number.NaN;
+    const leftIsLiveSource = left.provider === "novel-api" && !Number.isFinite(leftUpdated);
+    const rightIsLiveSource = right.provider === "novel-api" && !Number.isFinite(rightUpdated);
+    if (leftIsLiveSource !== rightIsLiveSource) return leftIsLiveSource ? -1 : 1;
+    if (Number.isFinite(leftUpdated) && Number.isFinite(rightUpdated) && leftUpdated !== rightUpdated) {
+      return rightUpdated - leftUpdated;
+    }
+    return (sourceOrder.get(left.slug) ?? 0) - (sourceOrder.get(right.slug) ?? 0);
   });
   const totalItems = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));

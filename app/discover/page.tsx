@@ -7,6 +7,7 @@ import { SiteHeader } from "../../components/SiteHeader";
 import { StoryCard } from "../../components/StoryCard";
 import { getFilteredDiscoverCatalog } from "../../lib/catalog";
 import { getD1DiscoverCatalog } from "../../lib/d1-catalog";
+import { isMangaApiCatalogProvider } from "../../lib/sources/manga-api";
 
 export const metadata: Metadata = { title: "Khám phá", description: "Tìm truyện theo tên, thể loại, mood, trạng thái và nguồn." };
 
@@ -38,7 +39,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
     sort,
   };
   const runtime = env as unknown as { DB?: D1Database };
-  const indexedCatalog = runtime.DB
+  const indexedCatalog = runtime.DB && !isMangaApiCatalogProvider()
     ? await getD1DiscoverCatalog(runtime.DB, filters).catch(() => null)
     : null;
   const catalog = indexedCatalog ?? await getFilteredDiscoverCatalog(filters);

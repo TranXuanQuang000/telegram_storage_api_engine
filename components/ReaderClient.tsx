@@ -393,7 +393,7 @@ export function ReaderClient({
         pages: targetChapter.pages.length,
         pageUrls: targetChapter.pages,
         estimatedBytes: targetChapter.pages.length * 420_000,
-        manifestVersion: `otruyen-${targetChapter.id}-${targetChapter.pages.length}`,
+        manifestVersion: `manga-api-${targetChapter.id}-${targetChapter.pages.length}`,
       });
       setDownload("done");
     } catch { setDownload("error"); }

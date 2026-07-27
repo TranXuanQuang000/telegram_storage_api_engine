@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { getFilteredDiscoverCatalog } from "../../../lib/catalog";
 import { getD1DiscoverCatalog } from "../../../lib/d1-catalog";
+import { isMangaApiCatalogProvider, MangaApiError } from "../../../lib/sources/manga-api";
 
 export async function GET(request: NextRequest) {
   const query = (request.nextUrl.searchParams.get("q") ?? "").slice(0, 120);
@@ -33,16 +34,25 @@ export async function GET(request: NextRequest) {
     scanPages,
   };
   const runtime = env as unknown as { DB?: D1Database };
-  const indexedCatalog = runtime.DB
+  const indexedCatalog = runtime.DB && !isMangaApiCatalogProvider()
     ? await getD1DiscoverCatalog(runtime.DB, filters).catch(() => null)
     : null;
-  const catalog = indexedCatalog ?? await getFilteredDiscoverCatalog(filters);
-  return NextResponse.json({
-    items: catalog.stories,
-    page: catalog.page,
-    totalItems: catalog.totalItems,
-    totalPages: catalog.totalPages,
-    sourceLabel: catalog.sourceLabel,
-    nextCursor: catalog.page < catalog.totalPages ? String(catalog.page + 1) : null,
-  }, { headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" } });
+  try {
+    const catalog = indexedCatalog ?? await getFilteredDiscoverCatalog(filters);
+    return NextResponse.json({
+      items: catalog.stories,
+      page: catalog.page,
+      totalItems: catalog.totalItems,
+      totalPages: catalog.totalPages,
+      sourceLabel: catalog.sourceLabel,
+      nextCursor: catalog.page < catalog.totalPages ? String(catalog.page + 1) : null,
+    }, { headers: { "Cache-Control": "public, max-age=45, stale-while-revalidate=120" } });
+  } catch (error) {
+    const status = error instanceof MangaApiError ? error.status : 502;
+    return NextResponse.json({
+      error: "Không tải được catalog",
+      code: error instanceof MangaApiError ? error.code : "CATALOG_PROVIDER_FAILED",
+      details: null,
+    }, { status, headers: { "Cache-Control": "no-store" } });
+  }
 }

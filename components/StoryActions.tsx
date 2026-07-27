@@ -158,7 +158,7 @@ export function StoryActions({
             pages: manifest.pages.length,
             pageUrls: manifest.pages,
             estimatedBytes: manifest.estimatedBytes,
-            manifestVersion: manifest.version ?? `otruyen-${ch.id}-${manifest.pages.length}`,
+            manifestVersion: manifest.version ?? `manga-api-${ch.id}-${manifest.pages.length}`,
           });
           successCount++;
         }

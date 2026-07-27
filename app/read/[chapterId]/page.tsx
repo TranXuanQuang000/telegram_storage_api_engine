@@ -5,6 +5,7 @@ import { ReaderClient } from "../../../components/ReaderClient";
 import { getChapterPages, getStory } from "../../../lib/catalog";
 import { persistOTruyenStorySnapshot } from "../../../lib/d1-story-sync";
 import { getReaderAccess, type ReaderAccessRuntime } from "../../../lib/reader-access";
+import { isMangaApiCatalogProvider } from "../../../lib/sources/manga-api";
 
 export const metadata: Metadata = { title: "Đang đọc", robots: { index: false, follow: false } };
 
@@ -27,7 +28,7 @@ export default async function ReadPage({ params, searchParams }: { params: Promi
   ]);
   if (!chapter) notFound();
   const runtime = env as unknown as { DB?: D1Database };
-  if (runtime.DB && story?.sourceName === "OTruyen API") {
+  if (runtime.DB && !isMangaApiCatalogProvider() && story?.sourceName === "OTruyen API") {
     await persistOTruyenStorySnapshot(runtime.DB, story).catch(() => false);
   }
   let imageOrigin = "";

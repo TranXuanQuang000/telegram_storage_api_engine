@@ -224,6 +224,7 @@ test("replacement content API is server-configured with a safe migration fallbac
 
 test("novel API uses opaque route IDs and preserves per-chapter provenance", () => {
   const adapter = source("lib/sources/novel-api.ts");
+  const contentConfig = source("lib/content-api.ts");
   const novels = source("lib/novels.ts");
   const reader = source("components/TextReaderClient.tsx");
   const catalog = source("components/NovelCatalog.tsx");
@@ -232,6 +233,7 @@ test("novel API uses opaque route IDs and preserves per-chapter provenance", () 
   assert.match(adapter, /nch\.\$\{primarySource\}\.\$\{source\}/);
   assert.match(adapter, /as_html=false/);
   assert.match(adapter, /original_source/);
+  assert.match(contentConfig, /wikidich\|gutendex/);
   assert.match(novels, /getNovelApiCatalog/);
   assert.match(novels, /getNovelApiChapter/);
   assert.match(reader, /sourceName/);

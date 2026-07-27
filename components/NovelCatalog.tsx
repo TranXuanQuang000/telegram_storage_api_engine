@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, BookText, LibraryBig, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { NovelSummary } from "../lib/novels";
+import { StoryCover } from "./StoryCover";
 
 type CatalogPayload = {
   items: NovelSummary[];
@@ -90,6 +91,11 @@ export function NovelCatalog({ initialNovels, initialQuery = "" }: { initialNove
           {payload.items.map((novel, index) => (
             <article key={novel.slug} className="novel-card" style={{ "--novel-accent": novel.accent } as React.CSSProperties}>
               <Link className="novel-card__cover" href={`/novels/${novel.slug}`}>
+                {novel.coverUrl ? (
+                  <div className="novel-card__art">
+                    <StoryCover src={novel.coverUrl} title={novel.title} />
+                  </div>
+                ) : null}
                 <span>{String((payload.page - 1) * 24 + index + 1).padStart(2, "0")}</span>
                 <BookText aria-hidden="true" />
                 <strong>{novel.title}</strong>

@@ -1,62 +1,47 @@
-# STRATEGY BLUEPRINT — MỰC
+# STRATEGY BLUEPRINT: MULTI-SOURCE AGGREGATOR & CONSENT-VERIFIED CONNECTOR ENGINE
 
-## 1. Core Vision
+## 1. Core Vision (Tầm nhìn khác biệt)
+Hệ thống sẽ đi theo mô hình **Compliance-First Server-Side Aggregator**. Thay vì đẩy gánh nặng xử lý và rủi ro vi phạm bản quyền xuống client (như Mihon/Tachiyomi), hệ thống sử dụng một API Gateway tập trung mạnh mẽ kết hợp với tư duy "Đạo đức Dữ liệu" (Ethical Data). Điểm cân bằng Nash giữa Sáng tạo và Thực tế nằm ở việc tạo ra sự minh bạch tuyệt đối cho người dùng (Trust) và công cụ trực quan tối đa cho đội ngũ quản trị (Efficiency), vận hành trên một lõi dữ liệu đã được tối ưu hóa.
 
-**Mực** là phòng đọc truyện tranh cá nhân hóa cho người Việt: mở vào là tiếp tục đúng trang đang đọc, tìm truyện bằng cả bộ lọc sâu lẫn ngôn ngữ tự nhiên, và tải chương về thiết bị để đọc ổn định khi mạng yếu.
+## 2. Innovative Workflows (Các luồng đột phá chốt lại)
 
-Khác biệt cốt lõi không nằm ở “nhiều truyện hơn”, mà ở ba lời hứa:
+### A. Tự động hợp nhất & Bù đắp (Smart Story/Chapter Merge)
+- **Thuật toán "Zipper" kết hợp Entity Resolution**: 
+  Sử dụng mô hình Probabilistic Record Linkage. Thuật toán Blocking sẽ nhóm các truyện/chap theo đặc tính (độ dài, ký tự đầu, tác giả) để tránh độ phức tạp $O(N^2)$. Sau đó, áp dụng Jaccard Similarity (cho văn bản) hoặc pHash (cho ảnh) trên tập con để xác định độ trùng lặp.
+- **Workflow "The Curator's Canvas"**: 
+  Admin không quản lý dữ liệu bằng danh sách (List/Table). Giao diện là một Infinite Canvas (React Flow) nơi các nguồn hiển thị dưới dạng luồng (Node stream). Admin có thể kéo thả để merge dữ liệu hoặc hệ thống tự động báo cáo các đoạn "lỗ hổng" (gap) để duyệt.
 
-1. **Đọc không đứt mạch** — tiếp tục đúng vị trí, tải theo chương, reader tối ưu webtoon/manga và mạng yếu.
-2. **Tìm đúng gu, không mò vô tận** — kết hợp lịch sử, tag, mood, nhịp truyện và tín hiệu gần đây; AI là lớp giải thích/tương tác tùy chọn, không phải hộp đen bắt buộc.
-3. **Tin được vì có nguồn** — điểm 5 sao là tổng hợp có trọng số từ nguồn thật, luôn hiển thị nguồn, số lượt đánh giá, độ mới và mức tin cậy; AI không được tự bịa điểm.
+### B. Cơ chế Xác thực Quyền Nguồn (Consent Verification)
+- **4 Lớp Khiên Bảo Vệ**: 
+  1. *Robots.txt Parser Layer* tuân thủ nghiêm ngặt rule và crawl-delay.
+  2. *Domain Whitelist* chặn các trang có license thương mại tại tầng Gateway.
+  3. *Opt-in/AI Headers Scanner* đọc thẻ meta và custom HTTP Headers.
+  4. *TOS Keyword Heuristic Scanner* cắm cờ các site cấm sao chép để manual review.
+- **Workflow "The Verified Journal"**:
+  Giao diện end-user hiển thị "Consent Badge" cho từng chap. Độc giả bấm vào sẽ xem được "Chứng thư nguồn gốc" (Provenance) chứng minh tính hợp pháp của dữ liệu đang đọc.
 
-## 2. Innovative Workflows
+### C. Giải pháp Resiliency & Anti-Blocking
+- **Kiến trúc Pipeline Tự Sửa Chữa (Self-Healing)**:
+  Sử dụng Adaptive Rate Limiting với Jitter, Exponential Backoff. Kết hợp Proxy Pool Rotation thông minh (theo dõi ASN/Subnet) và Sticky Sessions cho các trang cần auth.
+- **Workflow "Cyber-Nexus" Dashboard**:
+  Giám sát thời gian thực dạng tia sáng/particle stream. Áp dụng Circuit Breakers ngắt mạch tự động khi tỷ lệ lỗi vượt quá 20%/phút, cảnh báo đỏ trên UI để DevOps thay pool proxy.
 
-### Luồng A — “Nhặt lên đọc tiếp”
-
-Trang đầu ưu tiên đúng một truyện đang đọc dở, hiển thị chương/trang, phần trăm và thời gian đọc ước tính. Một chạm quay lại reader; không phải đi qua trang chi tiết.
-
-### Luồng B — “Tìm bằng gu”
-
-Người dùng có thể kết hợp tìm kiếm văn bản với chip bao gồm/loại trừ: thể loại, mood, nhịp, quốc gia, trạng thái, số chương, điểm tối thiểu, độ mới và nguồn. Câu hỏi như “manhwa trả thù, nữ chính thông minh, ít romance, đã hoàn thành” được chuyển thành bộ lọc có thể nhìn thấy và chỉnh sửa.
-
-### Luồng C — “Vì sao hợp với tôi?”
-
-Mỗi gợi ý có ba bằng chứng ngắn: tương đồng với truyện đã đọc, tag/mood trùng, và điểm khác biệt để tránh vòng lặp đề xuất. Nếu bật BYOK AI, người dùng có thể hỏi tiếp; API key chỉ tồn tại trong phiên và không được ghi log/lưu máy chủ.
-
-### Luồng D — “Gói đọc đường dài”
-
-Tại trang truyện hoặc reader, người dùng chọn chương rồi tải. Service worker + Cache Storage giữ app shell và ảnh chương; IndexedDB giữ manifest, tiến độ và dung lượng. UI báo rõ số MB, trạng thái, bản cập nhật và nút xóa.
-
-### Luồng E — “Nguồn minh bạch”
-
-Catalog hợp nhất metadata từ các connector được phép (API/OPDS/feed). Mỗi truyện có bảng nguồn, thời điểm đồng bộ, liên kết gốc, tình trạng quyền sử dụng và health. Hệ thống không vượt robots, paywall, DRM hoặc điều khoản nguồn.
-
-## 3. Market Validation
-
-- TruyenQQ cho thấy nhu cầu Việt tập trung vào cập nhật mới, thể loại dày, xếp hạng, theo dõi và truyện phổ biến: https://truyenqq.com.vn/ (truy cập 2026-07-23).
-- Mihon xác nhận giá trị của global search đa nguồn, thư viện, download, nhiều chế độ đọc và tracking: https://mihon.app/ và https://mihon.app/docs/guides/getting-started (truy cập 2026-07-23).
-- Apple Books nhấn mạnh resume, tùy biến reader, offline và reading goals; review thực tế cảnh báo không được tự xóa nội dung offline hoặc làm mất vị trí đọc: https://apps.apple.com/us/app/apple-books/id364709193 (truy cập 2026-07-23).
-- The StoryGraph chứng minh mood/pace là ngôn ngữ khám phá dễ hiểu hơn chỉ thể loại: https://www.thestorygraph.com/ (truy cập 2026-07-23).
-- Netflix công khai việc dùng history, rating, recency, tương đồng người dùng và metadata để cá nhân hóa, đồng thời ưu tiên “Continue Watching”: https://help.netflix.com/en/node/100639 (truy cập 2026-07-23).
-- AniList API có average score, reviews, tags và recommendations, nhưng có rate limit/điều khoản chống hoarding nên chỉ enrich theo nhu cầu và cache có TTL: https://docs.anilist.co/reference/object/media và https://docs.anilist.co/guide/terms-of-use (truy cập 2026-07-23).
+## 3. Market Validation (Chứng cứ)
+- **Kiến trúc Aggregator**: Trái ngược với *Tachiyomi/Mihon* (Client-side adapter), hệ thống này dùng *Server-side Microservices* để đảm bảo dữ liệu sạch và an toàn tập trung.
+- **Data Deduplication**: Thuật toán Record Linkage được chứng minh tính hiệu quả qua các thư viện như `Splink` (phát triển bởi MOJ Anh) hoặc `Dedupe.io`.
+- **Anti-Blocking**: Mô hình Circuit Breakers và ASN-aware Proxy Rotation học hỏi từ các nền tảng scraper chuyên nghiệp như *Scrapfly* và *ScrapingBee* (tham chiếu kiến trúc ngày 26/07/2026).
 
 ## 4. UI Opportunity
+- **Audience**: Độc giả có ý thức (Ethical Readers), Curators/Data Admins, DevOps.
+- **Top Tasks**: Đọc truyện với nguồn gốc rõ ràng, Merge chapter kéo thả trực quan, Giám sát sức khỏe pipeline cào dữ liệu.
+- **3 Art Directions**:
+  1. *The Curator's Canvas (Admin)*: Node-graph, infinite canvas, drag-and-drop manipulation.
+  2. *Cyber-Nexus (Monitor)*: Monospace, real-time data visualizer, dark mode HUD.
+  3. *The Verified Journal (End-user)*: Sạch sẽ, serif typography, editorial style, có Consent Badge.
+- **Interaction/Motion**: Kéo thả mượt mà trên Canvas, cuộn vô tận không giật lag (Seamless scroll), tia sáng real-time báo trạng thái mạng.
+- **Anti-Goals**: Không dùng thiết kế lòe loẹt/quảng cáo như web lậu; không dùng list tĩnh nhàm chán cho Admin.
 
-- **Audience:** độc giả manga/manhwa/manhua Việt, chủ yếu mobile; nhóm power-user có thư viện lớn và đọc mỗi ngày.
-- **Top tasks:** đọc tiếp; kiểm tra chương mới; tìm truyện đúng gu; tải chương; quản lý lịch sử/thư viện.
-- **Art direction A — Inkroom Editorial:** giấy ấm, mực đen, dấu son đỏ cam, typography editorial, cover như vật thể sưu tầm.
-- **Art direction B — Midnight Panels:** nền than, cover sáng, không gian reader điện ảnh.
-- **Art direction C — Index Kiosk:** giao diện dữ liệu dày, tìm kiếm/chip mạnh, cảm giác công cụ chuyên nghiệp.
-- **Cơ hội tương tác:** command search mở nhanh, shelf ngang có snap, hover/focus như lật thẻ, reader chrome tự ẩn, thanh tiến độ dạng chỉ trang.
-- **Anti-goals:** không purple-gradient/glass mặc định; không card hóa mọi nội dung; không hero marketing sáo rỗng; không số liệu/đánh giá giả; không animation cuộn trang hàng loạt.
-
-## 5. Technical Caveats & Risks
-
-- Bản quyền và điều khoản nguồn là rủi ro số một. Chỉ kết nối API/feed/OPDS được phép, lưu provenance và hỗ trợ takedown; không vượt DRM/paywall.
-- Offline ảnh truyện có thể chiếm hàng GB. Cần quota, ước lượng dung lượng, LRU có consent và không tự xóa gói đã pin.
-- PWA background/periodic sync phụ thuộc trình duyệt; server-side scheduler vẫn cần cho ingestion ổn định.
-- BYOK phải chống SSRF, giới hạn nhà cung cấp/base URL, không log Authorization và không lưu key mặc định.
-- Điểm tổng hợp phải chuẩn hóa thang điểm, dùng Bayesian weighting và hiển thị confidence; comment sentiment chỉ là tóm tắt có liên kết nguồn.
-- AniList hiện có giới hạn 30 req/phút khi degraded; connector phải cache, backoff và circuit-breaker.
-
+## 5. Cảnh báo rủi ro kỹ thuật
+- **Nghẽn cổ chai Entity Resolution**: So sánh nội dung lớn sẽ hao tốn CPU. Cần chạy Queue (RabbitMQ/Kafka) và tận dụng Blocking/Hashing tốt trước khi so sánh chi tiết.
+- **Performance Client-Side Admin**: Render hàng ngàn nodes trên Canvas có thể gây lag. Phải áp dụng ảo hóa (virtualization/Viewport culling) ở thư viện React Flow.
+- **Deadlock Rate Limit**: Thuật toán Circuit Breaker và Backoff phải cấu hình tỉ mỉ. Nếu quá nhạy, hệ thống sẽ ngừng cào liên tục; nếu quá trễ, sẽ bị ban hàng loạt IP đắt tiền. Lượng Jitter phải đủ ngẫu nhiên để không tạo sóng DDoS.

@@ -29,7 +29,7 @@ export function LatestUpdates() {
     <section className="catalog-section latest-updates page-shell" aria-labelledby="latest-updates-title">
       <div className="section-heading">
         <div>
-          <p className="section-kicker"><Radio aria-hidden="true" /> OTruyen + MangaDex / VI</p>
+          <p className="section-kicker"><Radio aria-hidden="true" /> Manga API / NetTruyen + TruyenQQ</p>
           <h2 id="latest-updates-title">Vừa có<br />chương mới.</h2>
         </div>
         <Link className="text-link" href="/discover?sort=latest">
@@ -55,7 +55,7 @@ export function LatestUpdatesFallback() {
     <section className="catalog-section latest-updates page-shell" aria-label="Đang lấy cập nhật truyện mới">
       <div className="community-picks__loading">
         <span />
-        <div><strong>Đang hợp nhất các chương vừa cập nhật…</strong><small>OTruyen · MangaDex tiếng Việt</small></div>
+        <div><strong>Đang hợp nhất các chương vừa cập nhật…</strong><small>Manga API · catalog server-side</small></div>
       </div>
     </section>
   );

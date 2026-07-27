@@ -3,10 +3,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { sameSecret } from "../../../../lib/admin-auth";
 import { runOTruyenIngest } from "../../../../lib/sources/otruyen";
+import { isMangaApiCatalogProvider } from "../../../../lib/sources/manga-api";
 
 const bodySchema = z.object({ source: z.literal("otruyen"), mode: z.enum(["incremental", "refresh"]), cursor: z.string().max(240).nullable().optional() }).strict();
 
 export async function POST(request: NextRequest) {
+  if (isMangaApiCatalogProvider()) {
+    return NextResponse.json({
+      error: "Catalog do manga-api quản lý; ingestion OTruyen trong web đã tắt",
+      code: "INGEST_MANAGED_BY_MANGA_API",
+      details: null,
+    }, { status: 409, headers: { "Cache-Control": "no-store" } });
+  }
   const runtime = env as unknown as { DB?: D1Database; INGEST_TOKEN?: string };
   if (!runtime.DB || !runtime.INGEST_TOKEN) return NextResponse.json({ error: "Ingestion chưa được cấu hình trên hosting", code: "INGEST_NOT_CONFIGURED", details: null }, { status: 503 });
   const supplied = request.headers.get("x-ingest-token") ?? "";

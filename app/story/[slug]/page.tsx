@@ -11,6 +11,7 @@ import { StoryActions } from "../../../components/StoryActions";
 import { StoryCover } from "../../../components/StoryCover";
 import { getStory } from "../../../lib/catalog";
 import { persistOTruyenStorySnapshot } from "../../../lib/d1-story-sync";
+import { isMangaApiCatalogProvider } from "../../../lib/sources/manga-api";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -23,7 +24,7 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
   const story = await getStory(slug, { includeExternalRating: false });
   if (!story) notFound();
   const runtime = env as unknown as { DB?: D1Database };
-  if (runtime.DB && story.sourceName === "OTruyen API") {
+  if (runtime.DB && !isMangaApiCatalogProvider() && story.sourceName === "OTruyen API") {
     await persistOTruyenStorySnapshot(runtime.DB, story).catch(() => false);
   }
   const firstReadable = story.latestChapterId;

@@ -132,7 +132,7 @@ function mapRemoteSummary(item: RemoteNovelItem, fallbackSource: string): NovelS
     accent: sourceAccent(`${source}:${item.slug}`),
     chapters: [],
     chapterCount: null,
-    updatedAt: item.updated_at ?? new Date(0).toISOString(),
+    updatedAt: item.updated_at ?? undefined,
     sourceName: sourceLabels[source],
     sourceUrl: item.source_url ?? undefined,
     sourceId: source,
