@@ -466,8 +466,23 @@ class AggregatorService:
         self.set_cache(cache_key, story, ttl=3600)
         return story
 
-    async def get_novel_catalog(self, page: int = 1, limit: int = 20, source: str = "hako") -> CatalogFetchResult:
-        snapshot = get_catalog_snapshot(source=source, page=page, limit=limit)
+    async def get_novel_catalog(
+        self,
+        page: int = 1,
+        limit: int = 20,
+        source: str = "hako",
+        query: str = "",
+        genre: str = "",
+        sort: str = "updated",
+    ) -> CatalogFetchResult:
+        snapshot = get_catalog_snapshot(
+            source=source,
+            page=page,
+            limit=limit,
+            query=query,
+            genre=genre,
+            sort=sort,
+        )
         if snapshot is not None:
             return snapshot
         if source.strip().lower() == "auto":

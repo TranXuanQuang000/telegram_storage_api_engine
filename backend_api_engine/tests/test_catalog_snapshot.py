@@ -105,6 +105,35 @@ def test_snapshot_auto_catalog_round_robins_and_deduplicates(tmp_path):
     assert catalog.total == 3
 
 
+def test_snapshot_filters_full_catalog_before_paginating(tmp_path):
+    path = tmp_path / "catalog.json"
+    first = story("truyenfull", "t1", "Kiếm Thần", "Tác giả A")
+    first["genres"] = ["Tiên Hiệp"]
+    second = story("truyenfull", "t2", "Đô Thị Chi Vương", "Tác giả B")
+    second["genres"] = ["Đô Thị"]
+    payload = {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "generated_at": "2026-07-27T00:00:00Z",
+        "source_order": ["truyenfull"],
+        "sources": {"truyenfull": {"items": [second, first]}},
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    snapshot = NovelCatalogSnapshot(path)
+    catalog = snapshot.get_catalog(
+        source="auto",
+        page=1,
+        limit=1,
+        query="kiếm",
+        genre="tiên hiệp",
+        sort="title",
+    )
+
+    assert catalog is not None
+    assert [item.external_id for item in catalog.stories] == ["t1"]
+    assert catalog.total == 1
+
+
 def test_invalid_snapshot_is_ignored(tmp_path):
     path = tmp_path / "invalid.json"
     path.write_text('{"schema_version":999,"sources":{}}', encoding="utf-8")

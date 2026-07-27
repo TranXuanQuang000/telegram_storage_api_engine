@@ -162,6 +162,50 @@ export async function getNovelApiCatalog() {
   return [...new Map(items.map((novel) => [novel.slug, novel])).values()];
 }
 
+export async function getNovelApiCatalogPage(options: {
+  page: number;
+  limit: number;
+  query?: string;
+  genre?: string;
+  sort?: string;
+}) {
+  const { baseUrl } = getContentApiConfiguration();
+  if (!baseUrl) return null;
+  const params = new URLSearchParams({
+    page: String(options.page),
+    limit: String(options.limit),
+    source: "auto",
+    sort: options.sort || "updated",
+  });
+  if (options.query?.trim()) params.set("q", options.query.trim());
+  if (options.genre?.trim()) params.set("genre", options.genre.trim());
+  const payload = await fetchRemoteJson<{
+    data?: {
+      items?: RemoteNovelItem[];
+      pagination?: {
+        total?: number;
+        page?: number;
+        limit?: number;
+        has_more?: boolean;
+      };
+    };
+  }>(`/truyen-chu/danh-sach?${params.toString()}`, 60_000);
+  const items = (payload.data?.items ?? [])
+    .map((item) => mapRemoteSummary(item, item.source ?? "auto"))
+    .filter((item): item is NovelSummary => Boolean(item));
+  const pagination = payload.data?.pagination;
+  const totalItems = Math.max(items.length, pagination?.total ?? items.length);
+  const pageSize = pagination?.limit ?? options.limit;
+  return {
+    items,
+    page: pagination?.page ?? options.page,
+    pageSize,
+    totalItems,
+    totalPages: Math.max(1, Math.ceil(totalItems / Math.max(1, pageSize))),
+    sourceLabel: `Mực Chữ Multi-Source · ${totalItems.toLocaleString("vi-VN")} tác phẩm đã lập chỉ mục`,
+  };
+}
+
 export async function getNovelApiStory(routeSlug: string): Promise<NovelSummary | null> {
   const ref = decodeNovelRouteSlug(routeSlug);
   if (!ref) return null;

@@ -3,6 +3,7 @@ import json
 import os
 import re
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -146,6 +147,9 @@ class NovelCatalogSnapshot:
         source: str,
         page: int,
         limit: int,
+        query: str = "",
+        genre: str = "",
+        sort: str = "updated",
     ) -> Optional[CatalogFetchResult]:
         enabled = os.getenv("NOVEL_CATALOG_SNAPSHOT_ENABLED", "true")
         if enabled.strip().lower() not in {"1", "true", "yes", "on"}:
@@ -163,6 +167,40 @@ class NovelCatalogSnapshot:
             items = self._sources.get(normalized_source)
             if items is None:
                 return None
+
+        normalized_query = _identity_text(query)
+        normalized_genre = _identity_text(genre)
+        if normalized_query or normalized_genre:
+            items = [
+                story
+                for story in items
+                if (
+                    not normalized_query
+                    or normalized_query
+                    in _identity_text(
+                        " ".join(
+                            filter(
+                                None,
+                                [story.title, story.author, story.description],
+                            )
+                        )
+                    )
+                )
+                and (
+                    not normalized_genre
+                    or any(_identity_text(item) == normalized_genre for item in story.genres)
+                )
+            ]
+        if sort == "title":
+            items = sorted(items, key=lambda story: _identity_text(story.title))
+        elif sort == "updated":
+            def updated_key(story: Story):
+                try:
+                    return datetime.fromisoformat((story.updated_at or "").replace("Z", "+00:00")).timestamp()
+                except (TypeError, ValueError):
+                    return 0
+
+            items = sorted(items, key=updated_key, reverse=True)
 
         safe_page = max(1, page)
         safe_limit = max(1, limit)
@@ -203,8 +241,18 @@ def get_catalog_snapshot(
     source: str,
     page: int,
     limit: int,
+    query: str = "",
+    genre: str = "",
+    sort: str = "updated",
 ) -> Optional[CatalogFetchResult]:
-    return _snapshot.get_catalog(source=source, page=page, limit=limit)
+    return _snapshot.get_catalog(
+        source=source,
+        page=page,
+        limit=limit,
+        query=query,
+        genre=genre,
+        sort=sort,
+    )
 
 
 def get_catalog_snapshot_status() -> Dict[str, Any]:

@@ -1,13 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNovelCatalog } from "../../../lib/novels";
 import { normalizeTitle } from "../../../lib/search-utils";
+import { getNovelApiCatalogPage } from "../../../lib/sources/novel-api";
 
 export async function GET(request: NextRequest) {
   const query = (request.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 120);
   const genre = (request.nextUrl.searchParams.get("genre") ?? "").trim().slice(0, 80);
   const sort = request.nextUrl.searchParams.get("sort") ?? "updated";
-  const page = Math.max(1, Math.min(100, Number(request.nextUrl.searchParams.get("page")) || 1));
+  const page = Math.max(1, Math.min(1_000, Number(request.nextUrl.searchParams.get("page")) || 1));
   const pageSize = Math.max(12, Math.min(48, Number(request.nextUrl.searchParams.get("limit")) || 24));
+  try {
+    const remote = await getNovelApiCatalogPage({
+      page,
+      limit: pageSize,
+      query,
+      genre,
+      sort,
+    });
+    if (remote) {
+      return NextResponse.json(remote, {
+        headers: { "Cache-Control": "private, no-store, max-age=0" },
+      });
+    }
+  } catch (error) {
+    console.error("Novel snapshot pagination failed", error);
+  }
   const catalog = await getNovelCatalog();
   const normalizedQuery = normalizeTitle(query);
   const filtered = catalog.filter((novel) => {

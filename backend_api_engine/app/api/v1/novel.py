@@ -41,6 +41,9 @@ async def get_novel_catalog(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     source: str = Query("auto"),
+    q: str = Query("", max_length=120),
+    genre: str = Query("", max_length=80),
+    sort: str = Query("updated", pattern="^(updated|title|chapters)$"),
     aggregator: AggregatorService = Depends(get_aggregator_service),
 ):
     """
@@ -48,7 +51,14 @@ async def get_novel_catalog(
     """
     source = _validate_source(source)
     try:
-        result = await aggregator.get_novel_catalog(page=page, limit=limit, source=source)
+        result = await aggregator.get_novel_catalog(
+            page=page,
+            limit=limit,
+            source=source,
+            query=q,
+            genre=genre,
+            sort=sort,
+        )
 
         items = []
         for story in result.stories:
