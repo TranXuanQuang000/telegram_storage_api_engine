@@ -3,7 +3,7 @@ name: Sync progressive novel catalog
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 */4 * * *"
+    - cron: "17 * * * *"
 
 permissions:
   contents: write
@@ -97,9 +97,10 @@ jobs:
           --sources hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex
           --output data/novel_catalog.snapshot.json.gz
           --hydrate-only
-          --hydrate-existing-limit 20
-          --detail-concurrency 2
-          --detail-delay-ms 1000
+          --hydrate-existing-limit 250
+          --pending-retry-limit 25
+          --detail-concurrency 3
+          --detail-delay-ms 600
 
       - name: Validate the progressive snapshot
         run: >-

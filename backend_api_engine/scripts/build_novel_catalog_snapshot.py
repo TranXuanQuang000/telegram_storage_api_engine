@@ -121,6 +121,12 @@ def parse_args() -> argparse.Namespace:
         help="Maximum existing catalog items to hydrate per source in this run",
     )
     parser.add_argument(
+        "--pending-retry-limit",
+        type=int,
+        default=int(os.getenv("NOVEL_SYNC_PENDING_RETRY_LIMIT", "25")),
+        help="Maximum failed detail items retried per source in this run; 0 skips retries",
+    )
+    parser.add_argument(
         "--detail-concurrency",
         type=int,
         default=int(os.getenv("NOVEL_SYNC_DETAIL_CONCURRENCY", "3")),
@@ -145,6 +151,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--checkpoint-every must be positive")
     if args.hydrate_existing_limit < 0:
         parser.error("--hydrate-existing-limit cannot be negative")
+    if args.pending_retry_limit < 0:
+        parser.error("--pending-retry-limit cannot be negative")
     if args.catalog_only and args.hydrate_only:
         parser.error("--catalog-only and --hydrate-only cannot be combined")
     if not 1 <= args.detail_concurrency <= 8:
@@ -277,6 +285,7 @@ async def sync_source(
     hydrate_details: bool,
     hydrate_only: bool,
     hydrate_existing_limit: int,
+    pending_retry_limit: int,
     detail_concurrency: int,
     detail_delay_ms: int,
     output: Path,
@@ -302,9 +311,15 @@ async def sync_source(
     pending_hydration = source_data.get("pending_hydration")
     if not isinstance(pending_hydration, dict):
         pending_hydration = {}
-    if hydrate_details and pending_hydration:
+    if hydrate_details and pending_hydration and pending_retry_limit:
+        retry_ids = list(pending_hydration)[:pending_retry_limit]
+        untouched_failures = {
+            external_id: error
+            for external_id, error in pending_hydration.items()
+            if external_id not in retry_ids
+        }
         retry_items = []
-        for external_id in list(pending_hydration):
+        for external_id in retry_ids:
             raw_item = items_by_id.get(external_id)
             if not raw_item:
                 pending_hydration.pop(external_id, None)
@@ -319,7 +334,7 @@ async def sync_source(
             )
             for story in hydrated:
                 items_by_id[story.external_id] = story.model_dump(mode="json")
-            pending_hydration = failures
+            pending_hydration = {**untouched_failures, **failures}
             source_data["items"] = list(items_by_id.values())
             source_data["pending_hydration"] = pending_hydration
             save_payload(output, payload)
@@ -461,6 +476,7 @@ async def main() -> int:
                 hydrate_details=not args.catalog_only,
                 hydrate_only=args.hydrate_only,
                 hydrate_existing_limit=args.hydrate_existing_limit,
+                pending_retry_limit=args.pending_retry_limit,
                 detail_concurrency=args.detail_concurrency,
                 detail_delay_ms=args.detail_delay_ms,
                 output=args.output.resolve(),

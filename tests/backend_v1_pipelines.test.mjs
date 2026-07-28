@@ -164,8 +164,10 @@ test('scheduled novel sync advances a bounded detail and chapter-manifest queue'
     'utf8',
   );
   assert.match(workflow, /--hydrate-only/);
-  assert.match(workflow, /--hydrate-existing-limit 20/);
+  assert.match(workflow, /--hydrate-existing-limit 250/);
+  assert.match(workflow, /--pending-retry-limit 25/);
   assert.match(builder, /hydration_cursor/);
   assert.match(builder, /hydrated_items_total/);
+  assert.match(builder, /untouched_failures/);
   assert.match(builder, /if hydrate_only:/);
 });
