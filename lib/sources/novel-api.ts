@@ -1,5 +1,6 @@
 import { contentApiHeaders, contentApiUrl, getContentApiConfiguration } from "../content-api";
 import type { NovelChapterContent, NovelSummary } from "../novels";
+import { compareHotNovels } from "../novel-ranking";
 
 type RemoteNovelItem = {
   id?: string;
@@ -180,7 +181,7 @@ export async function getNovelApiCatalogPage(options: {
   });
   if (options.query?.trim()) params.set("q", options.query.trim());
   if (options.genre?.trim()) params.set("genre", options.genre.trim());
-  const payload = await fetchRemoteJson<{
+  type CatalogPayload = {
     data?: {
       items?: RemoteNovelItem[];
       pagination?: {
@@ -190,10 +191,27 @@ export async function getNovelApiCatalogPage(options: {
         has_more?: boolean;
       };
     };
-  }>(`/truyen-chu/danh-sach?${params.toString()}`, 60_000);
+  };
+  const fetchPage = () => fetchRemoteJson<CatalogPayload>(
+    `/truyen-chu/danh-sach?${params.toString()}`,
+    60_000,
+  );
+  let usedCompatibilitySort = false;
+  let payload: CatalogPayload;
+  try {
+    payload = await fetchPage();
+  } catch (error) {
+    // Backend releases before v1.7 only accept "updated" and "title".
+    // Keep the UI on the new hot mode while Render rolls forward.
+    if (options.sort !== "hot" || !String(error).includes("NOVEL_API_422")) throw error;
+    params.set("sort", "updated");
+    usedCompatibilitySort = true;
+    payload = await fetchPage();
+  }
   const items = (payload.data?.items ?? [])
     .map((item) => mapRemoteSummary(item, item.source ?? "auto"))
     .filter((item): item is NovelSummary => Boolean(item));
+  if (usedCompatibilitySort) items.sort(compareHotNovels);
   const pagination = payload.data?.pagination;
   const totalItems = Math.max(items.length, pagination?.total ?? items.length);
   const pageSize = pagination?.limit ?? options.limit;

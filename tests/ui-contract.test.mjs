@@ -233,6 +233,9 @@ test("novel API uses opaque route IDs and preserves per-chapter provenance", () 
   assert.match(adapter, /nch\.\$\{primarySource\}\.\$\{source\}/);
   assert.match(adapter, /as_html=false/);
   assert.match(adapter, /original_source/);
+  assert.match(adapter, /NOVEL_API_422/);
+  assert.match(adapter, /params\.set\("sort", "updated"\)/);
+  assert.match(adapter, /items\.sort\(compareHotNovels\)/);
   assert.match(contentConfig, /wikidich\|gutendex/);
   assert.match(novels, /getNovelApiCatalog/);
   assert.match(novels, /getNovelApiChapter/);
