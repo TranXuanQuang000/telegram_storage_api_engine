@@ -39,6 +39,8 @@ yarn-error.log*
 next-env.d.ts
 /dist/
 /build/
+!/build/
+!/build/sites-vite-plugin.ts
 *.tsbuildinfo
 /.wrangler/
 /outputs/
