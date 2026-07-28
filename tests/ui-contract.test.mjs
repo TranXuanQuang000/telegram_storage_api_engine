@@ -61,14 +61,14 @@ test("library merges saved stories and reading history into full-cover progress 
   assert.match(css, /\.library-story-card__cover[\s\S]*\.story-cover/);
 });
 
-test("home shelves prioritize device reading signals and offer a personal recommendation row", () => {
+test("home shelves prioritize device reading signals and hot personal recommendations", () => {
   const home = source("app/page.tsx");
   const shelves = source("components/PersonalizedHomeShelves.tsx");
   const reader = source("components/ReaderClient.tsx");
   assert.match(home, /<PersonalizedHomeShelves \/>/);
   assert.match(shelves, /Bộ bạn thích và đọc nhiều nhất/);
   assert.match(shelves, /Đề xuất riêng cho bạn/);
-  assert.match(shelves, /sort: "rating"/);
+  assert.match(shelves, /sort: "hot"/);
   assert.match(reader, /muc:story-stats/);
 });
 
