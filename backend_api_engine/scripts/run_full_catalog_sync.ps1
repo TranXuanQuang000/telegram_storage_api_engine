@@ -3,7 +3,7 @@ param(
   [string]$LogDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) "sync-logs")
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $pythonExecutable = (Get-Command python -ErrorAction Stop).Source
 $snapshotPath = Join-Path $ProjectRoot "data\novel_catalog.snapshot.json.gz"
 $novelLog = Join-Path $LogDirectory "novel-full-sync.log"
@@ -33,6 +33,10 @@ $env:SOURCE_OPERATION_TIMEOUT_SECONDS = "20"
   --checkpoint-every 1 `
   --detail-concurrency 2 `
   --detail-delay-ms 700 *>> $novelLog
+$novelExitCode = $LASTEXITCODE
+
+"[$(Get-Date -Format o)] Multi-source novel sync finished with exit code $novelExitCode" |
+  Out-File -FilePath $novelLog -Append -Encoding utf8
 
 "[$(Get-Date -Format o)] Starting full Gutenberg metadata sync" |
   Out-File -FilePath $novelLog -Append -Encoding utf8
@@ -47,6 +51,10 @@ $env:SOURCE_OPERATION_TIMEOUT_SECONDS = "20"
   --retries 6 `
   --checkpoint-every 1 `
   --catalog-only *>> $novelLog
+$gutenbergExitCode = $LASTEXITCODE
 
-"[$(Get-Date -Format o)] Novel sync finished with exit code $LASTEXITCODE" |
+"[$(Get-Date -Format o)] Gutenberg sync finished with exit code $gutenbergExitCode" |
+  Out-File -FilePath $novelLog -Append -Encoding utf8
+
+"[$(Get-Date -Format o)] Full sync cycle finished (novels=$novelExitCode, gutenberg=$gutenbergExitCode)" |
   Out-File -FilePath $novelLog -Append -Encoding utf8
