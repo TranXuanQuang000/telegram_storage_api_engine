@@ -25,7 +25,7 @@ jobs:
       TRUYENFULL_BASE_URL: https://truyenfull.win
       METRUYENCHU_BASE_URL: https://metruyenchu.co
       TANGTHUVIEN_BASE_URL: https://tangthuvien.org
-      WIKIDICH_BASE_URL: https://wikidichzz.com
+      WIKIDICH_BASE_URL: https://truyenmoiss.org
       SOURCE_OPERATION_TIMEOUT_SECONDS: "20"
 
     steps:

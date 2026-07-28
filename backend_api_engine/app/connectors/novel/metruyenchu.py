@@ -254,6 +254,8 @@ class MetruyenchuConnector(BaseConnector):
             ch_href = ch_el.get("href", "")
             ch_url = clean_url_slashes(urljoin(self.base_url, ch_href))
             ch_id = ch_href.strip("/").split("/")[-1]
+            if self.source_id == "wikidich" and not ch_id.startswith("chuong-"):
+                continue
             if not ch_id or ch_id in seen_ids:
                 continue
             seen_ids.add(ch_id)
@@ -289,7 +291,7 @@ class MetruyenchuConnector(BaseConnector):
                 slug=slug,
                 fallback=chapters,
             )
-        elif "wikidich" in host and chapters:
+        elif self.source_id == "wikidich" and chapters:
             chapters = self._expand_numeric_chapter_links(slug, chapters)
 
         return Story(
