@@ -184,6 +184,10 @@ test("continuous comic and novel readers preload and append the next chapter", (
   const novel = source("components/TextReaderClient.tsx");
   const css = source("app/globals.css");
   assert.match(comic, /preloadChapterPages\(nextPages/);
+  assert.match(comic, /preload\.loaded !== preload\.total/);
+  assert.match(comic, /NEXT_CHAPTER_PRELOAD_INCOMPLETE/);
+  assert.match(comic, /dataset\.pageReady === "true"/);
+  assert.match(comic, /function chapterLabel/);
   assert.match(comic, /window\.setTimeout\(start, 0\)/);
   assert.match(comic, /stream\.map\(\(loadedChapter, chapterPosition\)/);
   assert.match(comic, /Math\.floor\(totalPages \* \.45\)/);

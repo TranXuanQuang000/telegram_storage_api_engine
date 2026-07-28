@@ -35,6 +35,16 @@ type StreamComicChapter = ReaderChapter & {
   pages: string[];
 };
 
+function chapterLabel(value: string) {
+  const text = String(value ?? "").trim();
+  const normalized = text.match(/^(?:chapter|chap|chương)\s*[:#.-]?\s*(.+)$/i)?.[1]?.trim();
+  return `Chương ${normalized || text || "?"}`;
+}
+
+function compactChapterLabel(value: string) {
+  return chapterLabel(value).replace(/^Chương\s+/i, "Ch. ");
+}
+
 export function ReaderClient({
   chapterId,
   chapterName,
@@ -198,7 +208,16 @@ export function ReaderClient({
       const constrained = connection?.saveData
         || connection?.effectiveType === "slow-2g"
         || connection?.effectiveType === "2g";
-      await preloadChapterPages(nextPages, { concurrency: constrained ? 2 : 4 });
+      const preload = await preloadChapterPages(nextPages, {
+        concurrency: constrained ? 2 : 4,
+      });
+      if (
+        preload.total !== nextPages.length ||
+        preload.loaded !== preload.total ||
+        preload.failed > 0
+      ) {
+        throw new Error("NEXT_CHAPTER_PRELOAD_INCOMPLETE");
+      }
       const loaded = {
         ...candidate,
         number: manifest.chapterName || candidate.number,
@@ -292,7 +311,12 @@ export function ReaderClient({
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
-      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      const visible = entries
+        .filter((entry) =>
+          entry.isIntersecting
+          && (entry.target as HTMLElement).dataset.pageReady === "true"
+        )
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
       if (!visible) return;
       const page = Number((visible.target as HTMLElement).dataset.page ?? 0);
       const visibleChapterId = (visible.target as HTMLElement).dataset.chapterId || chapterId;
@@ -444,7 +468,7 @@ export function ReaderClient({
                 : `đang chuẩn bị ${chapterLoad.loaded}/${chapterLoad.total}`
               : "chương nối tiếp đã tải sẵn"}
           </small>
-          <strong>Chương {activeStreamChapter?.number ?? chapterName}</strong>
+          <strong>{chapterLabel(activeStreamChapter?.number ?? chapterName)}</strong>
         </div>
         <Link href="/discover" aria-label="Tiếp tục tìm truyện"><Search aria-hidden="true" /></Link>
         <button type="button" onClick={() => setSettings(true)} aria-label="Mở cài đặt reader"><Settings2 aria-hidden="true" /></button>
@@ -452,13 +476,13 @@ export function ReaderClient({
 
       <button className="reader-menu-hit" type="button" onClick={() => setChrome((value) => !value)} aria-label={chrome ? "Ẩn thanh điều khiển" : "Hiện thanh điều khiển"}><Menu aria-hidden="true" /></button>
 
-      <main className="reader-pages" aria-label={`Luồng đọc liên tục từ chương ${chapterName}`}>
+      <main className="reader-pages" aria-label={`Luồng đọc liên tục từ ${chapterLabel(chapterName)}`}>
         {stream.map((loadedChapter, chapterPosition) => (
           <section className="reader-stream-chapter" key={loadedChapter.id} data-stream-chapter={loadedChapter.id}>
             {chapterPosition > 0 ? (
               <div className="reader-chapter-boundary">
                 <span>CHƯƠNG NỐI TIẾP · ĐÃ TẢI SẴN</span>
-                <strong>Chương {loadedChapter.number}</strong>
+                <strong>{chapterLabel(loadedChapter.number)}</strong>
               </div>
             ) : null}
             {loadedChapter.pages.map((page, index) => (
@@ -471,10 +495,11 @@ export function ReaderClient({
                 }}
                 data-page={index}
                 data-chapter-id={loadedChapter.id}
+                data-page-ready="false"
               >
                 <Image
                   src={page}
-                  alt={`Trang ${index + 1} của chương ${loadedChapter.number}`}
+                  alt={`Trang ${index + 1} của ${chapterLabel(loadedChapter.number)}`}
                   width={1440}
                   height={2200}
                   sizes="(max-width: 1184px) 100vw, 1184px"
@@ -483,6 +508,14 @@ export function ReaderClient({
                   fetchPriority={chapterPosition === 0 && index < 2 ? "high" : "auto"}
                   decoding="async"
                   unoptimized
+                  onLoad={(event) => {
+                    const figure = event.currentTarget.closest("figure");
+                    if (figure) figure.dataset.pageReady = "true";
+                  }}
+                  onError={(event) => {
+                    const figure = event.currentTarget.closest("figure");
+                    if (figure) figure.dataset.pageReady = "false";
+                  }}
                 />
                 <figcaption>{String(index + 1).padStart(2, "0")}</figcaption>
               </figure>
@@ -506,11 +539,11 @@ export function ReaderClient({
           </div>
         ) : null}
         <section className="reader-end">
-          <span>Đã tải đến chương {tailChapter?.number ?? chapterName}</span>
-          <h2>{tailNextChapter ? `Cuộn tiếp để nạp chương ${tailNextChapter.number}.` : "Bạn đã đến chương mới nhất."}</h2>
+          <span>Đã tải đến {chapterLabel(tailChapter?.number ?? chapterName)}</span>
+          <h2>{tailNextChapter ? `Cuộn tiếp để nạp ${chapterLabel(tailNextChapter.number).toLowerCase()}.` : "Bạn đã đến chương mới nhất."}</h2>
           <p>Reader tự tải trọn chương hiện tại và chuẩn bị chương kế tiếp trong nền. Tiến độ được cập nhật khi bạn đi qua ranh giới chương.</p>
           <div className="reader-end__actions" style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "center" }}>
-            {tailNextChapter ? <button className="button button--paper" type="button" onClick={() => void loadNextIntoStream(tailChapter?.id ?? chapterId)}>Nạp chương {tailNextChapter.number} <ChevronRight aria-hidden="true" /></button> : null}
+            {tailNextChapter ? <button className="button button--paper" type="button" onClick={() => void loadNextIntoStream(tailChapter?.id ?? chapterId)}>Nạp {chapterLabel(tailNextChapter.number).toLowerCase()} <ChevronRight aria-hidden="true" /></button> : null}
             {storySlug ? (
               <Link className="button button--ink" href={`/story/${storySlug}`}>
                 <BookOpen aria-hidden="true" /> Về trang truyện này
@@ -523,7 +556,7 @@ export function ReaderClient({
 
       <nav className={`reader-chrome reader-chrome--bottom${chrome ? " is-visible" : ""}`} aria-label="Điều hướng trang và chương">
         <button type="button" onClick={() => openChapter(previousChapter)} disabled={!previousChapter} aria-label="Chương trước"><ChevronsLeft aria-hidden="true" /></button>
-        <button className="reader-chapter-picker" type="button" onClick={() => setChapterList(true)} disabled={!chapters.length} aria-label="Mở danh sách chương"><List aria-hidden="true" /><span>Ch. {activeStreamChapter?.number ?? chapterName}</span></button>
+        <button className="reader-chapter-picker" type="button" onClick={() => setChapterList(true)} disabled={!chapters.length} aria-label="Mở danh sách chương"><List aria-hidden="true" /><span>{compactChapterLabel(activeStreamChapter?.number ?? chapterName)}</span></button>
         <button type="button" onClick={() => goTo(currentPage - 1)} disabled={currentPage === 0 && !previousChapter} aria-label={currentPage === 0 ? "Sang chương trước" : "Trang trước"}><ChevronLeft aria-hidden="true" /></button>
         <div className="reader-progress"><span style={{ width: `${percent}%` }} /><strong>{currentPage + 1}</strong><small>/ {activePageCount}</small></div>
         <button type="button" onClick={() => goTo(currentPage + 1)} disabled={currentPage === activePageCount - 1 && !nextChapter} aria-label={currentPage === activePageCount - 1 ? "Sang chương tiếp theo" : "Trang sau"}><ChevronRight aria-hidden="true" /></button>
@@ -538,7 +571,7 @@ export function ReaderClient({
             <nav className="reader-chapter-list" aria-label="Danh sách chương">
               {visibleChapters.map((chapter) => (
                 <Link key={chapter.id} href={chapterHref(chapter.id)} aria-current={chapter.id === chapterId ? "page" : undefined} onClick={() => setChapterList(false)}>
-                  <strong>Chương {chapter.number}</strong>
+                  <strong>{chapterLabel(chapter.number)}</strong>
                   <small>{chapter.id === chapterId ? "đang đọc" : chapter.title || "mở chương"}</small>
                   <ChevronRight aria-hidden="true" />
                 </Link>
@@ -551,7 +584,7 @@ export function ReaderClient({
       {settings ? (
         <div className="reader-settings-backdrop" role="presentation" onClick={() => setSettings(false)}>
           <aside className="reader-settings" role="dialog" aria-modal="true" aria-labelledby="reader-settings-title" onClick={(event) => event.stopPropagation()}>
-            <div className="reader-settings__title"><div><small>Chương {activeStreamChapter?.number ?? chapterName}</small><h2 id="reader-settings-title">Nhịp đọc</h2></div><button type="button" onClick={() => setSettings(false)} aria-label="Đóng cài đặt"><X aria-hidden="true" /></button></div>
+            <div className="reader-settings__title"><div><small>{chapterLabel(activeStreamChapter?.number ?? chapterName)}</small><h2 id="reader-settings-title">Nhịp đọc</h2></div><button type="button" onClick={() => setSettings(false)} aria-label="Đóng cài đặt"><X aria-hidden="true" /></button></div>
             <div className="reader-settings__group"><span>Nền đọc</span><div className="segmented"><button type="button" data-active={theme === "dark"} onClick={() => setTheme("dark")}><Moon aria-hidden="true" />Đêm</button><button type="button" data-active={theme === "light"} onClick={() => setTheme("light")}><Sun aria-hidden="true" />Giấy</button></div></div>
             <div className="reader-settings__group"><span>Khoảng giữa trang</span><div className="segmented"><button type="button" data-active={gap === "none"} onClick={() => setGap("none")}>Liền</button><button type="button" data-active={gap === "soft"} onClick={() => setGap("soft")}>Vừa</button><button type="button" data-active={gap === "wide"} onClick={() => setGap("wide")}>Rộng</button></div></div>
             <button className="download-row" type="button" onClick={downloadChapter} disabled={download === "working"}>
