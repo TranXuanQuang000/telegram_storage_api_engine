@@ -1,0 +1,17 @@
+{
+  "status": "COMPLETE",
+  "comic_manifest_scheduler": {
+    "sources": ["nettruyen", "truyenqq"],
+    "persisted_cursor": "SyncState.manifestCursorId",
+    "batch_size_default": 4,
+    "source_isolation": "Promise.allSettled",
+    "tests": "12 passed"
+  },
+  "novel_ranking": {
+    "sort": "hot",
+    "signals": ["chapter_count", "cover", "description", "author", "genres", "status", "updated_at"],
+    "chapter_count_preserved_after_compaction": true,
+    "backend_tests": "118 passed",
+    "frontend_contract_tests": "37 passed"
+  }
+}

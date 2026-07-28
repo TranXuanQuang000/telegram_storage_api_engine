@@ -43,7 +43,7 @@ async def get_novel_catalog(
     source: str = Query("auto"),
     q: str = Query("", max_length=120),
     genre: str = Query("", max_length=80),
-    sort: str = Query("updated", pattern="^(updated|title|chapters)$"),
+    sort: str = Query("updated", pattern="^(hot|updated|title|chapters)$"),
     aggregator: AggregatorService = Depends(get_aggregator_service),
 ):
     """
@@ -75,6 +75,10 @@ async def get_novel_catalog(
                 "updated_at": story.updated_at,
                 "source": story.source_id,
                 "source_url": story.external_url,
+                "chapter_count": max(
+                    len(story.chapters),
+                    int((story.raw_metadata or {}).get("chapter_count") or 0),
+                ),
             })
 
         return {

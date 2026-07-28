@@ -237,7 +237,10 @@ test("novel API uses opaque route IDs and preserves per-chapter provenance", () 
   assert.match(novels, /getNovelApiCatalog/);
   assert.match(novels, /getNovelApiChapter/);
   assert.match(reader, /sourceName/);
-  assert.match(catalog, /catalogVersion: "2"/);
+  assert.match(catalog, /catalogVersion: "3"/);
+  assert.match(catalog, /value="hot"/);
+  assert.match(catalog, /novel-card__art/);
+  assert.match(catalog, /novel-card__fallback/);
   assert.match(catalog, /cache: "no-store"/);
   assert.match(catalogRoute, /private, no-store/);
   assert.doesNotMatch(reader, /WIKISOURCE PUBLIC DOMAIN/);

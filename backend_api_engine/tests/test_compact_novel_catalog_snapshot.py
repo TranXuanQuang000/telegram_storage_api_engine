@@ -34,5 +34,5 @@ def test_compact_snapshot_removes_chapter_manifests_and_pending_hydration():
     assert stats == {"total_items": 1, "removed_chapters": 1}
     item = payload["sources"]["truyenfull"]["items"][0]
     assert item["chapters"] == []
-    assert item["raw_metadata"] == {}
+    assert item["raw_metadata"] == {"chapter_count": 1}
     assert payload["sources"]["truyenfull"]["pending_hydration"] == {}

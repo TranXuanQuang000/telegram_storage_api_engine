@@ -11,11 +11,11 @@
   "project_id": "muc-reader-nova",
   "run_id": "859dbf85-63c4-4ac8-a8ae-c57951397781",
   "schema_version": "2.0",
-  "status": "EXECUTION",
-  "task_id": "verify_and_deploy_cloudflare",
-  "updated_at": "2026-07-28T05:04:09.329844+00:00",
+  "status": "VERIFICATION",
+  "task_id": "verify_and_publish",
+  "updated_at": "2026-07-28T04:42:26.874209+00:00",
   "verifier_hash": "76fd2dd03c584dbf41477b03a781f54da80d1ac87a95f0f378ec6b34ab600016",
-  "version": 24,
-  "work_units": 23,
+  "version": 13,
+  "work_units": 12,
   "workspace_id": "54799487-8b6c-4114-92e8-677af14ce158"
 }

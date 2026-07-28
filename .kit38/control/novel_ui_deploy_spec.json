@@ -1,0 +1,30 @@
+{
+  "tasks": [
+    {
+      "task_id": "redesign_novel_ui",
+      "description": "Redesign the novel catalog and detail presentation around full cover art, clear source/chapter metadata, and responsive navigation.",
+      "dependencies": [],
+      "allowed_scope": ["app/novels", "components", "app/globals.css", "tests"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "Novel covers are prominent with a graceful no-cover state",
+        "Catalog controls expose hot, updated, title, and chapter-count sorting",
+        "Mobile and desktop layouts remain readable and accessible"
+      ],
+      "timeout_seconds": 1800
+    },
+    {
+      "task_id": "verify_and_deploy_cloudflare",
+      "description": "Run tests, publish manga backend changes, deploy the validated web build to muctruyen.pages.dev, and verify production.",
+      "dependencies": ["redesign_novel_ui"],
+      "allowed_scope": ["entire project", "GitHub", "Render", "Cloudflare Pages", "Sites"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "Frontend and backend tests pass",
+        "muctruyen.pages.dev responds with the new novel UI and APIs",
+        "Background manifest and catalog progress remains observable"
+      ],
+      "timeout_seconds": 3000
+    }
+  ]
+}

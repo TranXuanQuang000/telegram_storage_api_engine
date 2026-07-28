@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getNovelCatalog } from "../../../lib/novels";
 import { normalizeTitle } from "../../../lib/search-utils";
 import { getNovelApiCatalogPage } from "../../../lib/sources/novel-api";
+import { compareHotNovels } from "../../../lib/novel-ranking";
 
 export async function GET(request: NextRequest) {
   const query = (request.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 120);
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest) {
   });
   const sourceOrder = new Map(filtered.map((novel, index) => [novel.slug, index]));
   filtered.sort((left, right) => {
+    if (sort === "hot") return compareHotNovels(left, right);
     if (sort === "title") return left.title.localeCompare(right.title, "vi");
     if (sort === "chapters") return right.chapters.length - left.chapters.length || left.title.localeCompare(right.title, "vi");
     const leftUpdated = left.updatedAt ? new Date(left.updatedAt).getTime() : Number.NaN;

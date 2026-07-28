@@ -48,10 +48,19 @@ def compact_snapshot(payload: Dict[str, Any]) -> Dict[str, int]:
                 continue
             total_items += 1
             chapters = item.get("chapters")
+            raw_metadata = item.get("raw_metadata")
+            known_chapter_count = (
+                raw_metadata.get("chapter_count", 0)
+                if isinstance(raw_metadata, dict)
+                else 0
+            )
             if isinstance(chapters, list):
                 removed_chapters += len(chapters)
+                known_chapter_count = max(known_chapter_count, len(chapters))
             item["chapters"] = []
-            item["raw_metadata"] = {}
+            item["raw_metadata"] = {
+                "chapter_count": max(0, int(known_chapter_count or 0)),
+            }
     return {"total_items": total_items, "removed_chapters": removed_chapters}
 
 

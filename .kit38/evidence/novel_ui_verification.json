@@ -1,0 +1,20 @@
+{
+  "status": "COMPLETE",
+  "catalog": {
+    "layout": "cover-first responsive grid",
+    "desktop_columns": 4,
+    "tablet_columns": 3,
+    "mobile_columns": 2,
+    "cover_fallback": true,
+    "sort_modes": ["hot", "updated", "chapters", "title"]
+  },
+  "detail": {
+    "full_cover": true,
+    "source_and_chapter_summary": true,
+    "two_column_chapter_index": true
+  },
+  "validation": {
+    "lint_errors": 0,
+    "frontend_tests": "37 passed"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "tasks": [
+    {
+      "task_id": "audit_cloudflare_novel_pipeline",
+      "description": "Audit Cloudflare Pages deployment, comic manifest indexing, novel covers, recommendation ordering, and current novel UI.",
+      "dependencies": [],
+      "allowed_scope": ["entire project", "D:/Code/Project/manga-api"],
+      "risk_tier": "LOW",
+      "acceptance_checks": [
+        "Cloudflare Pages project and production API availability are confirmed",
+        "Comic and novel source responsibilities are documented",
+        "Existing queue and manifest behavior is identified"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "task_id": "implement_manifest_and_novel_ranking",
+      "description": "Add resumable comic chapter-manifest scheduling and hot-first novel catalog ranking with cover-aware metadata.",
+      "dependencies": ["audit_cloudflare_novel_pipeline"],
+      "allowed_scope": ["D:/Code/Project/manga-api", "backend_api_engine", "lib", "app/api"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "NetTruyen and TruyenQQ manifests advance through a persisted cursor",
+        "One failed source does not stop the other source",
+        "Novel hot ordering uses stable metadata signals and remains deterministic"
+      ],
+      "timeout_seconds": 2400
+    },
+    {
+      "task_id": "redesign_novel_ui",
+      "description": "Redesign the novel catalog and detail presentation around full cover art, clear source/chapter metadata, and responsive navigation.",
+      "dependencies": ["implement_manifest_and_novel_ranking"],
+      "allowed_scope": ["app/novels", "components", "app/globals.css", "tests"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "Novel covers are prominent with a graceful no-cover state",
+        "Catalog controls expose hot, updated, title, and chapter-count sorting",
+        "Mobile and desktop layouts remain readable and accessible"
+      ],
+      "timeout_seconds": 1800
+    },
+    {
+      "task_id": "verify_and_deploy_cloudflare",
+      "description": "Run tests, publish manga backend changes, deploy the validated web build to muctruyen.pages.dev, and verify production.",
+      "dependencies": ["redesign_novel_ui"],
+      "allowed_scope": ["entire project", "GitHub", "Render", "Cloudflare Pages", "Sites"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "Frontend and backend tests pass",
+        "muctruyen.pages.dev responds with the new novel UI and APIs",
+        "Background manifest and catalog progress remains observable"
+      ],
+      "timeout_seconds": 3000
+    }
+  ]
+}

@@ -1,7 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, BookText, LibraryBig, Search } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpenText,
+  Clock3,
+  Flame,
+  LibraryBig,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { NovelSummary } from "../lib/novels";
 import { StoryCover } from "./StoryCover";
@@ -14,17 +23,26 @@ type CatalogPayload = {
   sourceLabel: string;
 };
 
+function chapterLabel(novel: NovelSummary) {
+  const count = novel.chapterCount ?? novel.chapters.length;
+  return count > 0 ? `${count.toLocaleString("vi-VN")} chương` : "Đang nạp mục lục";
+}
+
+function initials(title: string) {
+  return title.split(/\s+/).filter(Boolean).slice(0, 3).map((word) => word[0]).join("").toUpperCase();
+}
+
 export function NovelCatalog({ initialNovels, initialQuery = "" }: { initialNovels: NovelSummary[]; initialQuery?: string }) {
   const [payload, setPayload] = useState<CatalogPayload>({
     items: initialNovels,
     page: 1,
     totalItems: initialNovels.length,
     totalPages: 1,
-    sourceLabel: "Tác phẩm đóng gói sẵn",
+    sourceLabel: "Tác phẩm mở sẵn",
   });
   const [query, setQuery] = useState(initialQuery);
   const [genre, setGenre] = useState("");
-  const [sort, setSort] = useState("updated");
+  const [sort, setSort] = useState("hot");
   const [loading, setLoading] = useState(true);
 
   function load(page = 1, signal?: AbortSignal) {
@@ -33,7 +51,7 @@ export function NovelCatalog({ initialNovels, initialQuery = "" }: { initialNove
       page: String(page),
       limit: "24",
       sort,
-      catalogVersion: "2",
+      catalogVersion: "3",
     });
     if (query.trim()) params.set("q", query.trim());
     if (genre) params.set("genre", genre);
@@ -50,7 +68,7 @@ export function NovelCatalog({ initialNovels, initialQuery = "" }: { initialNove
     const controller = new AbortController();
     queueMicrotask(() => void load(1, controller.signal).catch(() => undefined));
     return () => controller.abort();
-    // Initial catalog expansion intentionally runs once after first paint.
+    // Expand the server-rendered starter shelf once after first paint.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -61,62 +79,98 @@ export function NovelCatalog({ initialNovels, initialQuery = "" }: { initialNove
 
   return (
     <section className="novel-catalog" aria-labelledby="novel-catalog-title">
-      <div className="section-heading">
+      <div className="section-heading novel-catalog__heading">
         <div>
-          <p className="section-kicker"><LibraryBig aria-hidden="true" /> TỦ CHỮ CÔNG CỘNG</p>
-          <h2 id="novel-catalog-title">Tác phẩm có thể mở ngay.</h2>
+          <p className="section-kicker"><LibraryBig aria-hidden="true" /> NOVEL INDEX / LIVE</p>
+          <h2 id="novel-catalog-title">Tủ chữ đang phát sóng.</h2>
         </div>
-        <span className="novel-catalog__count">{payload.totalItems.toLocaleString("vi-VN")} tác phẩm · {payload.sourceLabel}</span>
+        <div className="novel-catalog__summary">
+          <strong>{payload.totalItems.toLocaleString("vi-VN")}</strong>
+          <span>tác phẩm đã lập chỉ mục</span>
+          <small>{payload.sourceLabel}</small>
+        </div>
       </div>
+
       <form className="novel-catalog__filters" onSubmit={submit} role="search">
-        <label>
+        <label className="novel-catalog__search">
           <Search aria-hidden="true" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm tác phẩm, tác giả hoặc dịch giả…" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tên truyện, tác giả, dịch giả…" />
         </label>
-        <select value={genre} onChange={(event) => setGenre(event.target.value)} aria-label="Lọc loại truyện chữ">
-          <option value="">Mọi loại tác phẩm</option>
+        <select value={genre} onChange={(event) => setGenre(event.target.value)} aria-label="Lọc thể loại truyện chữ">
+          <option value="">Mọi thể loại</option>
+          <option value="Light Novel">Light novel</option>
+          <option value="Tiên Hiệp">Tiên hiệp</option>
+          <option value="Huyền Huyễn">Huyền huyễn</option>
+          <option value="Ngôn Tình">Ngôn tình</option>
           <option value="Tiểu thuyết">Tiểu thuyết</option>
           <option value="Truyện ngắn">Truyện ngắn</option>
-          <option value="Văn học Việt Nam">Văn học Việt Nam</option>
         </select>
         <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sắp xếp truyện chữ">
+          <option value="hot">Đang hot</option>
           <option value="updated">Mới cập nhật</option>
+          <option value="chapters">Nhiều chương</option>
           <option value="title">Tên A–Z</option>
-          <option value="chapters">Nhiều phần trước</option>
         </select>
-        <button className="button button--ink" type="submit" disabled={loading}><Search aria-hidden="true" /> {loading ? "Đang tải…" : "Tìm truyện chữ"}</button>
+        <button className="button button--ink" type="submit" disabled={loading}>
+          <Search aria-hidden="true" /> {loading ? "Đang dò sóng…" : "Tìm trong tủ"}
+        </button>
       </form>
+
+      <div className="novel-catalog__mode" aria-live="polite">
+        {sort === "hot" ? <><Flame aria-hidden="true" /> Ưu tiên truyện nhiều chương, metadata đầy đủ, có bìa và vừa cập nhật.</> : null}
+        {sort === "updated" ? <><Clock3 aria-hidden="true" /> Đang xếp theo thời điểm nguồn cập nhật gần nhất.</> : null}
+        {sort === "chapters" ? <><BookOpenText aria-hidden="true" /> Đang xếp các bộ có mục lục dài lên trước.</> : null}
+        {sort === "title" ? <><Sparkles aria-hidden="true" /> Đang xếp theo tên tiếng Việt.</> : null}
+      </div>
+
       {payload.items.length ? (
-        <div className="novel-grid" aria-busy={loading}>
+        <div className={`novel-grid${loading ? " is-loading" : ""}`} aria-busy={loading}>
           {payload.items.map((novel, index) => (
             <article key={novel.slug} className="novel-card" style={{ "--novel-accent": novel.accent } as React.CSSProperties}>
-              <Link className="novel-card__cover" href={`/novels/${novel.slug}`}>
+              <Link className="novel-card__cover" href={`/novels/${novel.slug}`} aria-label={`Mở ${novel.title}`}>
                 {novel.coverUrl ? (
                   <div className="novel-card__art">
                     <StoryCover src={novel.coverUrl} title={novel.title} />
                   </div>
-                ) : null}
-                <span>{String((payload.page - 1) * 24 + index + 1).padStart(2, "0")}</span>
-                <BookText aria-hidden="true" />
-                <strong>{novel.title}</strong>
-                <small>{novel.author}</small>
+                ) : (
+                  <div className="novel-card__fallback">
+                    <BookOpenText aria-hidden="true" />
+                    <strong>{initials(novel.title)}</strong>
+                  </div>
+                )}
+                <span className="novel-card__rank">{String((payload.page - 1) * 24 + index + 1).padStart(2, "0")}</span>
+                <span className="novel-card__source">{novel.sourceName ?? "Mực Chữ"}</span>
+                <span className="novel-card__open">Mở tác phẩm <ArrowRight aria-hidden="true" /></span>
               </Link>
-              <div>
-                <p>{novel.description}</p>
-                <div>
-                  {novel.genres.slice(0, 3).map((item) => <span key={item}>{item}</span>)}
-                  <span>{(novel.chapterCount ?? novel.chapters.length) > 0 ? `${novel.chapterCount ?? novel.chapters.length} phần` : "Mở để tải mục lục"}</span>
+              <div className="novel-card__body">
+                <div className="novel-card__title">
+                  <h3><Link href={`/novels/${novel.slug}`}>{novel.title}</Link></h3>
+                  <p>{novel.author}</p>
                 </div>
-                <Link href={`/novels/${novel.slug}`}>Mở tác phẩm <ArrowRight aria-hidden="true" /></Link>
+                <p className="novel-card__description">{novel.description}</p>
+                <div className="novel-card__tags">
+                  {novel.genres.slice(0, 2).map((item) => <span key={item}>{item}</span>)}
+                </div>
+                <div className="novel-card__footer">
+                  <span><BookOpenText aria-hidden="true" /> {chapterLabel(novel)}</span>
+                  <Link href={`/novels/${novel.slug}`}>Chi tiết <ArrowRight aria-hidden="true" /></Link>
+                </div>
               </div>
             </article>
           ))}
         </div>
-      ) : <div className="empty-state"><h2>Chưa tìm thấy tác phẩm phù hợp.</h2><p>Thử bỏ bộ lọc thể loại hoặc tìm bằng tên tác giả.</p></div>}
+      ) : (
+        <div className="empty-state">
+          <BookOpenText aria-hidden="true" />
+          <h2>Chưa tìm thấy tác phẩm phù hợp.</h2>
+          <p>Thử bỏ bớt bộ lọc hoặc tìm bằng một phần tên tác giả.</p>
+        </div>
+      )}
+
       {payload.totalPages > 1 ? (
         <nav className="novel-catalog__pagination" aria-label="Phân trang truyện chữ">
           <button type="button" onClick={() => void load(payload.page - 1)} disabled={loading || payload.page <= 1}><ArrowLeft aria-hidden="true" /> Trang trước</button>
-          <span>Trang {payload.page}/{payload.totalPages}</span>
+          <span>Trang <strong>{payload.page}</strong> / {payload.totalPages}</span>
           <button type="button" onClick={() => void load(payload.page + 1)} disabled={loading || payload.page >= payload.totalPages}>Trang sau <ArrowRight aria-hidden="true" /></button>
         </nav>
       ) : null}

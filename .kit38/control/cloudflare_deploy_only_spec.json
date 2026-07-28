@@ -1,0 +1,17 @@
+{
+  "tasks": [
+    {
+      "task_id": "verify_and_deploy_cloudflare",
+      "description": "Run tests, publish manga backend changes, deploy the validated web build to muctruyen.pages.dev, and verify production.",
+      "dependencies": [],
+      "allowed_scope": ["entire project", "GitHub", "Render", "Cloudflare Pages", "Sites"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "Frontend and backend tests pass",
+        "muctruyen.pages.dev responds with the new novel UI and APIs",
+        "Background manifest and catalog progress remains observable"
+      ],
+      "timeout_seconds": 3000
+    }
+  ]
+}

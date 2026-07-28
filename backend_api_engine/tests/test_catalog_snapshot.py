@@ -134,6 +134,31 @@ def test_snapshot_filters_full_catalog_before_paginating(tmp_path):
     assert catalog.total == 1
 
 
+def test_snapshot_hot_sort_prefers_chapter_depth_and_complete_metadata(tmp_path):
+    path = tmp_path / "catalog.json"
+    deep = story("truyenfull", "deep", "Popular serial")
+    deep["cover_url"] = "https://example.test/deep.jpg"
+    deep["description"] = "A complete catalog record"
+    deep["genres"] = ["Fantasy", "Adventure"]
+    deep["raw_metadata"] = {"chapter_count": 420}
+    shallow = story("truyenfull", "shallow", "Tiny serial")
+    shallow["updated_at"] = "2026-07-28T00:00:00Z"
+    shallow["raw_metadata"] = {"chapter_count": 2}
+    payload = {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "generated_at": "2026-07-28T00:00:00Z",
+        "source_order": ["truyenfull"],
+        "sources": {"truyenfull": {"items": [shallow, deep]}},
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    snapshot = NovelCatalogSnapshot(path)
+    catalog = snapshot.get_catalog(source="auto", page=1, limit=10, sort="hot")
+
+    assert catalog is not None
+    assert [item.external_id for item in catalog.stories] == ["deep", "shallow"]
+
+
 def test_invalid_snapshot_is_ignored(tmp_path):
     path = tmp_path / "invalid.json"
     path.write_text('{"schema_version":999,"sources":{}}', encoding="utf-8")

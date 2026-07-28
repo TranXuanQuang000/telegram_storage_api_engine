@@ -1,5 +1,6 @@
 import gzip
 import json
+import math
 import os
 import re
 import threading
@@ -16,6 +17,35 @@ MAX_SNAPSHOT_BYTES = 128 * 1024 * 1024
 
 def _identity_text(value: Optional[str]) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().casefold())
+
+
+def _novel_hot_score(story: Story) -> float:
+    raw_metadata = story.raw_metadata if isinstance(story.raw_metadata, dict) else {}
+    chapter_count = max(
+        len(story.chapters),
+        int(raw_metadata.get("chapter_count") or 0),
+    )
+    metadata_score = sum(
+        (
+            9 if story.cover_url else 0,
+            5 if story.description else 0,
+            3 if story.author else 0,
+            min(6, len(story.genres) * 1.5),
+        )
+    )
+    status_score = 3 if story.status.value == "ongoing" else 1
+    try:
+        freshness = datetime.fromisoformat(
+            (story.updated_at or "").replace("Z", "+00:00")
+        ).timestamp() / 100_000_000
+    except (TypeError, ValueError):
+        freshness = 0
+    return (
+        math.log1p(chapter_count) * 18
+        + metadata_score
+        + status_score
+        + freshness
+    )
 
 
 def _configured_snapshot_path() -> Path:
@@ -193,6 +223,15 @@ class NovelCatalogSnapshot:
             ]
         if sort == "title":
             items = sorted(items, key=lambda story: _identity_text(story.title))
+        elif sort == "hot":
+            items = sorted(
+                items,
+                key=lambda story: (
+                    -_novel_hot_score(story),
+                    _identity_text(story.title),
+                    story.external_id,
+                ),
+            )
         elif sort == "updated":
             def updated_key(story: Story):
                 try:

@@ -14,6 +14,7 @@ type RemoteNovelItem = {
   source?: string;
   source_url?: string | null;
   chapters?: RemoteNovelChapter[];
+  chapter_count?: number | null;
 };
 
 type RemoteNovelChapter = {
@@ -131,7 +132,7 @@ function mapRemoteSummary(item: RemoteNovelItem, fallbackSource: string): NovelS
     genres: item.genres?.filter(Boolean) ?? [],
     accent: sourceAccent(`${source}:${item.slug}`),
     chapters: [],
-    chapterCount: null,
+    chapterCount: Number.isFinite(item.chapter_count) ? Math.max(0, item.chapter_count ?? 0) : null,
     updatedAt: item.updated_at ?? undefined,
     sourceName: sourceLabels[source],
     sourceUrl: item.source_url ?? undefined,

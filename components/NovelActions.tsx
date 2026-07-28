@@ -46,7 +46,7 @@ export function NovelActions({ novel }: { novel: NovelSummary }) {
           storyId,
           slug: novel.slug,
           title: novel.title,
-          coverUrl: null,
+          coverUrl: novel.coverUrl ?? null,
           medium: "novel",
           status: "reading",
           followed: true,
