@@ -23,9 +23,9 @@ jobs:
       ENABLED_SOURCES: hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex
       HAKO_BASE_URL: https://docln.sbs
       TRUYENFULL_BASE_URL: https://truyenfull.win
-      METRUYENCHU_BASE_URL: https://metruyenchu.org
-      TANGTHUVIEN_BASE_URL: https://tangthuvien.org
-      WIKIDICH_BASE_URL: https://www.wikidich.com.vn
+      METRUYENCHU_BASE_URL: https://metruyenchu.co
+      TANGTHUVIEN_BASE_URL: https://truyen.tangthuvien.vn
+      WIKIDICH_BASE_URL: https://wikidichzz.com
       SOURCE_OPERATION_TIMEOUT_SECONDS: "20"
 
     steps:
@@ -52,13 +52,12 @@ jobs:
           --sources truyenfull,metruyenchu,tangthuvien,wikidich
           --output data/novel_catalog.snapshot.json.gz
           --max-pages-per-source 10000
-          --max-new-pages-per-source 30
+          --max-new-pages-per-source 100
           --page-size 20
           --delay-ms 1800
           --retries 3
           --checkpoint-every 10
           --catalog-only
-          --refresh-completed
 
       - name: Advance Hako gently
         continue-on-error: true
@@ -67,13 +66,12 @@ jobs:
           --sources hako
           --output data/novel_catalog.snapshot.json.gz
           --max-pages-per-source 10000
-          --max-new-pages-per-source 2
+          --max-new-pages-per-source 10
           --page-size 20
           --delay-ms 8000
           --retries 2
           --checkpoint-every 1
           --catalog-only
-          --refresh-completed
 
       - name: Advance Project Gutenberg
         continue-on-error: true
@@ -82,15 +80,27 @@ jobs:
           --sources gutendex
           --output data/novel_catalog.snapshot.json.gz
           --max-pages-per-source 10000
-          --max-new-pages-per-source 30
+          --max-new-pages-per-source 100
           --page-size 20
           --delay-ms 900
           --retries 3
           --checkpoint-every 10
           --catalog-only
-          --refresh-completed
+
+      - name: Check the all-source catalog barrier
+        id: catalog_barrier
+        shell: bash
+        run: |
+          if python scripts/check_novel_catalog_phase.py \
+            data/novel_catalog.snapshot.json.gz \
+            --sources "$ENABLED_SOURCES"; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Hydrate covers, details and chapter manifests
+        if: steps.catalog_barrier.outputs.ready == 'true'
         continue-on-error: true
         run: >-
           python scripts/build_novel_catalog_snapshot.py
@@ -107,11 +117,6 @@ jobs:
           python scripts/check_novel_snapshot_complete.py
           data/novel_catalog.snapshot.json.gz
           --allow-partial
-
-      - name: Compact the deployment snapshot
-        run: >-
-          python scripts/compact_novel_catalog_snapshot.py
-          data/novel_catalog.snapshot.json.gz
 
       - name: Publish the new checkpoint
         working-directory: .

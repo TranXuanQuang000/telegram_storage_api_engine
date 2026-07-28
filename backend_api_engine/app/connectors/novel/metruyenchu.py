@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+import json
 import re
 from bs4 import BeautifulSoup
 import httpx
@@ -29,6 +30,7 @@ class MetruyenchuConnector(BaseConnector):
         super().__init__(client=client, timeout=timeout)
         if base_url:
             self.base_url = base_url.rstrip("/")
+        self._chapter_action_id: Optional[str] = None
 
     def _clean_text(self, text: Optional[str]) -> str:
         if not text:
@@ -72,40 +74,76 @@ class MetruyenchuConnector(BaseConnector):
                 "#list-page .col-truyen-main .list-truyen",
                 ".story-list",
                 "article.story-item",
+                "article.book-item",
                 ".thumb-item",
+                "a[href^='/truyen/'] img",
             ),
         )
 
         items = soup.select(
             "#list-page .col-truyen-main .list-truyen .row, "
             ".list-truyen .item, .story-list .item, "
-            "article.story-item, .thumb-item"
+            "article.story-item, article.book-item, .thumb-item"
         )
         if not items:
-            items = soup.select(".item, article")
+            items = soup.select(".item, article.book-item")
+        if not items:
+            # Current Mê Truyện Chữ is a Next.js site whose list cards do not
+            # expose a stable semantic class. The cover anchor is stable and
+            # gives us one deterministic node per story.
+            items = [
+                anchor
+                for anchor in soup.select("a[href^='/truyen/']")
+                if anchor.select_one("img")
+            ]
 
         stories = []
-        for item in items[:limit]:
+        seen_slugs = set()
+        for item in items:
             title_el = item.select_one(
-                ".truyen-title a, .title a, h3 a, h2 a, a.story-name, a"
+                ".truyen-title a, .title a, h3 a, h2 a, a.story-name, "
+                "a[title], a[href^='/truyen/'], a"
             )
+            if item.name == "a" and item.get("href"):
+                title_el = item
             if not title_el or not title_el.get("href"):
                 continue
 
-            title = self._clean_text(title_el.get_text())
+            title_node = item.select_one(".book-title, h5, h3, p.font-semibold")
+            title = self._clean_text(
+                title_el.get("title")
+                or (title_node.get_text() if title_node else None)
+                or title_el.get_text()
+            )
+            image_node = item.select_one("img")
+            if not title and image_node:
+                title = self._clean_text(image_node.get("alt"))
             rel_url = title_el.get("href", "")
             ext_url = clean_url_slashes(urljoin(self.base_url, rel_url))
             slug = rel_url.strip("/").split("/")[-1]
+            if not title or not slug or slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
 
-            cover_el = item.select_one("img")
+            cover_el = image_node
             cover_url = None
             if cover_el:
                 src = cover_el.get("data-src") or cover_el.get("src")
                 if src:
                     cover_url = clean_url_slashes(urljoin(self.base_url, src))
 
-            author_el = item.select_one(".author, .info-author")
+            author_el = item.select_one(
+                ".author, .info-author, .book-author, a[href*='/tac-gia/']"
+            )
             author = self._clean_text(author_el.get_text()) if author_el else None
+            genres = [
+                self._clean_text(node.get_text())
+                for node in item.select(
+                    ".book-meta-genres, a[href*='/the-loai/'], "
+                    "a[href*='/danh-sach/']"
+                )
+                if self._clean_text(node.get_text())
+            ]
 
             story = Story(
                 source_id=self.source_id,
@@ -116,7 +154,7 @@ class MetruyenchuConnector(BaseConnector):
                 author=author,
                 description=None,
                 cover_url=cover_url,
-                genres=[],
+                genres=list(dict.fromkeys(genres)),
                 status=StoryStatus.UNKNOWN,
                 medium=self.medium,
                 content_rating=ContentRating.UNKNOWN,
@@ -125,12 +163,21 @@ class MetruyenchuConnector(BaseConnector):
                 raw_metadata={"parsed_url": ext_url},
             )
             stories.append(story)
+            if len(stories) >= limit:
+                break
 
         pagination = soup.select_one(".pagination")
         has_more = bool(
             pagination
             and pagination.select_one("li.active + li a, a[rel='next'], a.next")
         )
+        if not has_more:
+            has_more = bool(
+                soup.select_one(
+                    "a[rel='next'], a[href*='?page='][aria-label*='next' i], "
+                    ".pagination a[href*='trang-']"
+                )
+            )
         return CatalogFetchResult(
             stories=stories,
             total=len(stories),
@@ -146,8 +193,8 @@ class MetruyenchuConnector(BaseConnector):
         else:
             slug = identifier.strip("/")
             candidates = [
-                f"{self.base_url}/{slug}",
                 f"{self.base_url}/truyen/{slug}",
+                f"{self.base_url}/{slug}",
             ]
         response = await self._get_first_public(candidates)
         soup = parse_public_html(
@@ -164,8 +211,18 @@ class MetruyenchuConnector(BaseConnector):
         author_el = soup.select_one(".author, .info-author, a[href*='/tac-gia/']")
         author = self._clean_text(author_el.get_text()) if author_el else None
 
-        desc_el = soup.select_one(".description, .detail-content, .summary, .story-intro, .desc-text")
-        desc = desc_el.get_text(separator="\n", strip=True) if desc_el else None
+        desc_el = soup.select_one(
+            ".description, .detail-content, .summary, .story-intro, "
+            ".desc-text, article .intro"
+        )
+        desc_meta = soup.select_one("meta[name='description']")
+        desc = (
+            desc_el.get_text(separator="\n", strip=True)
+            if desc_el
+            else desc_meta.get("content")
+            if desc_meta
+            else None
+        )
 
         cover_el = soup.select_one(".cover img, .info img, .detail-thumb img, img")
         cover_url = None
@@ -201,7 +258,17 @@ class MetruyenchuConnector(BaseConnector):
                 continue
             seen_ids.add(ch_id)
 
-            match = re.search(r"(?:chuong|chương)\s*(\d+(?:\.\d+)?)", ch_title, re.I)
+            match = re.search(
+                r"(?:chuong|chương)[^\d]*(\d+(?:\.\d+)?)",
+                ch_title,
+                re.I,
+            )
+            if not match:
+                match = re.search(
+                    r"(?:chuong|chapter)-?(\d+(?:\.\d+)?)",
+                    ch_id,
+                    re.I,
+                )
             ch_num = match.group(1) if match else None
 
             chapters.append(
@@ -214,6 +281,16 @@ class MetruyenchuConnector(BaseConnector):
             )
 
         slug = identifier.strip("/").split("/")[-1]
+        host = (urlparse(self.base_url).hostname or "").lower()
+        if host.endswith("metruyenchu.co"):
+            chapters = await self._fetch_next_chapter_manifest(
+                response=response,
+                soup=soup,
+                slug=slug,
+                fallback=chapters,
+            )
+        elif "wikidich" in host and chapters:
+            chapters = self._expand_numeric_chapter_links(slug, chapters)
 
         return Story(
             source_id=self.source_id,
@@ -232,6 +309,125 @@ class MetruyenchuConnector(BaseConnector):
             chapters=chapters,
             raw_metadata={"parsed_url": url},
         )
+
+    async def _discover_chapter_action(self, soup: BeautifulSoup) -> Optional[str]:
+        if self._chapter_action_id:
+            return self._chapter_action_id
+        for script in soup.select("script[src]"):
+            source = script.get("src")
+            if not source:
+                continue
+            try:
+                response = await self.get(urljoin(self.base_url, source), max_retries=1)
+            except Exception:
+                continue
+            match = re.search(
+                r'createServerReference\)\("([a-f0-9]{32,})",[^)]*'
+                r'"actionGetChapters"\)',
+                response.text,
+                re.S,
+            )
+            if match:
+                self._chapter_action_id = match.group(1)
+                return self._chapter_action_id
+        return None
+
+    async def _fetch_next_chapter_manifest(
+        self,
+        *,
+        response: httpx.Response,
+        soup: BeautifulSoup,
+        slug: str,
+        fallback: List[ChapterHeader],
+    ) -> List[ChapterHeader]:
+        escaped_slug = re.escape(slug)
+        book_match = re.search(
+            rf'\\"_id\\":\\"([^\\"]+)\\",\\"slugId\\":\\"{escaped_slug}\\"',
+            response.text,
+        )
+        action_id = await self._discover_chapter_action(soup)
+        if not book_match or not action_id:
+            return fallback
+        client = await self.get_client()
+        action_response = await client.post(
+            str(response.url),
+            headers={
+                "Next-Action": action_id,
+                "Content-Type": "text/plain;charset=UTF-8",
+                "Accept": "text/x-component",
+            },
+            content=json.dumps(
+                [
+                    {
+                        "bookId": book_match.group(1),
+                        "page": 1,
+                        "limit": 1_000_000_000,
+                        "isNewest": False,
+                    }
+                ],
+                separators=(",", ":"),
+            ),
+        )
+        if action_response.status_code != 200:
+            return fallback
+        payload = None
+        for line in action_response.text.splitlines():
+            if not re.match(r"^\d+:", line):
+                continue
+            try:
+                candidate = json.loads(line.split(":", 1)[1])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict) and isinstance(candidate.get("data"), list):
+                payload = candidate["data"]
+                break
+        if payload is None:
+            return fallback
+        manifest = []
+        for chapter in payload:
+            number = chapter.get("number")
+            if number is None:
+                continue
+            number_text = str(number)
+            manifest.append(
+                ChapterHeader(
+                    external_id=f"chuong-{number_text}",
+                    title=self._clean_text(chapter.get("name"))
+                    or f"Chương {number_text}",
+                    chapter_number=number_text,
+                    url=clean_url_slashes(
+                        f"{self.base_url}/truyen/{slug}/chuong-{number_text}"
+                    ),
+                )
+            )
+        return manifest or fallback
+
+    def _expand_numeric_chapter_links(
+        self,
+        slug: str,
+        chapters: List[ChapterHeader],
+    ) -> List[ChapterHeader]:
+        by_number = {
+            int(float(chapter.chapter_number)): chapter
+            for chapter in chapters
+            if chapter.chapter_number
+            and re.fullmatch(r"\d+(?:\.0+)?", chapter.chapter_number)
+        }
+        if not by_number:
+            return chapters
+        maximum = max(by_number)
+        if maximum > 20_000:
+            return chapters
+        return [
+            by_number.get(number)
+            or ChapterHeader(
+                external_id=f"chuong-{number}",
+                title=f"Chương {number}",
+                chapter_number=str(number),
+                url=clean_url_slashes(f"{self.base_url}/{slug}/chuong-{number}"),
+            )
+            for number in range(1, maximum + 1)
+        ]
 
     async def fetch_chapter(
         self, story_identifier: str, chapter_identifier: str
@@ -254,6 +450,7 @@ class MetruyenchuConnector(BaseConnector):
                 ".chapter-c",
                 ".content-text",
                 ".box-chap",
+                "article",
             ),
         )
         url = str(response.url)
@@ -269,6 +466,7 @@ class MetruyenchuConnector(BaseConnector):
                 ".chapter-c",
                 ".content-text",
                 ".box-chap",
+                "article",
             ),
         )
 

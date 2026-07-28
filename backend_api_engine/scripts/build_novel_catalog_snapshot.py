@@ -210,6 +210,16 @@ def page_fingerprint(items: List[Dict[str, Any]]) -> str:
     )
 
 
+def catalog_phase_complete(payload: Dict[str, Any], sources: Iterable[str]) -> bool:
+    source_payload = payload.get("sources", {})
+    return all(
+        bool(source_payload.get(source_id, {}).get("completed"))
+        and bool(source_payload.get(source_id, {}).get("items"))
+        and not source_payload.get(source_id, {}).get("last_error")
+        for source_id in sources
+    )
+
+
 async def fetch_page(connector, page: int, page_size: int, retries: int):
     failure: Exception | None = None
     for attempt in range(retries + 1):
@@ -219,6 +229,14 @@ async def fetch_page(connector, page: int, page_size: int, retries: int):
             failure = error
             if attempt < retries:
                 backoff = min(30.0, 0.75 * (2**attempt))
+                response = getattr(error, "response", None)
+                if getattr(response, "status_code", None) == 429:
+                    retry_after = response.headers.get("Retry-After", "").strip()
+                    try:
+                        requested_delay = float(retry_after)
+                    except (TypeError, ValueError):
+                        requested_delay = 30.0
+                    backoff = min(120.0, max(15.0, requested_delay))
                 await asyncio.sleep(backoff + random.uniform(0.15, 0.75))
     assert failure is not None
     raise failure
@@ -301,6 +319,8 @@ async def sync_source(
             "last_error": None,
             "pages_crawled": 0,
             "pending_hydration": {},
+            "hydration_cursor": 0,
+            "hydration_completed": False,
         },
     )
     items_by_id = {
@@ -311,6 +331,20 @@ async def sync_source(
     pending_hydration = source_data.get("pending_hydration")
     if not isinstance(pending_hydration, dict):
         pending_hydration = {}
+    if "hydration_completed" not in source_data:
+        # Older deployment snapshots were compacted after hydration and therefore
+        # lost their chapter links. Restart once from the beginning under the
+        # durable-manifest format.
+        source_data["hydration_cursor"] = 0
+        source_data["hydration_completed"] = False
+    if source_data.get("completed") and not items_by_id:
+        # A connector/domain mismatch used to mark an empty first page as a
+        # successful round. Empty catalogs are never a valid terminal state.
+        source_data["completed"] = False
+        source_data["next_page"] = 1
+        source_data["last_fingerprint"] = ""
+        source_data["completion_reason"] = "empty_catalog_recovery"
+    hydration_budget = hydrate_existing_limit if hydrate_details else 0
     if hydrate_details and pending_hydration and pending_retry_limit:
         retry_ids = list(pending_hydration)[:pending_retry_limit]
         untouched_failures = {
@@ -338,35 +372,46 @@ async def sync_source(
             source_data["items"] = list(items_by_id.values())
             source_data["pending_hydration"] = pending_hydration
             save_payload(output, payload)
-    if hydrate_details and hydrate_existing_limit and items_by_id:
+    if hydration_budget and items_by_id:
         ordered_items = list(items_by_id.values())
-        cursor = int(source_data.get("hydration_cursor") or 0) % len(ordered_items)
-        batch_size = min(hydrate_existing_limit, len(ordered_items))
+        cursor = min(
+            max(0, int(source_data.get("hydration_cursor") or 0)),
+            len(ordered_items),
+        )
+        batch_size = min(hydration_budget, len(ordered_items) - cursor)
         batch = [
-            Story.model_validate(ordered_items[(cursor + offset) % len(ordered_items)])
+            Story.model_validate(ordered_items[cursor + offset])
             for offset in range(batch_size)
         ]
-        hydrated, failures = await hydrate_stories(
-            connector,
-            batch,
-            concurrency=detail_concurrency,
-            delay_ms=detail_delay_ms,
-        )
-        for story in hydrated:
-            items_by_id[story.external_id] = story.model_dump(mode="json")
-        for external_id, error in failures.items():
-            pending_hydration[external_id] = error
-        for story in hydrated:
-            if story.raw_metadata.get("snapshot_hydrated"):
-                pending_hydration.pop(story.external_id, None)
-        source_data["items"] = list(items_by_id.values())
-        source_data["pending_hydration"] = pending_hydration
-        source_data["hydration_cursor"] = (cursor + batch_size) % len(ordered_items)
-        source_data["hydrated_items_total"] = int(
-            source_data.get("hydrated_items_total") or 0
-        ) + sum(
-            1 for story in hydrated if story.raw_metadata.get("snapshot_hydrated")
-        )
+        if batch:
+            hydrated, failures = await hydrate_stories(
+                connector,
+                batch,
+                concurrency=detail_concurrency,
+                delay_ms=detail_delay_ms,
+            )
+            for story in hydrated:
+                items_by_id[story.external_id] = story.model_dump(mode="json")
+            for external_id, error in failures.items():
+                pending_hydration[external_id] = error
+            for story in hydrated:
+                if story.raw_metadata.get("snapshot_hydrated"):
+                    pending_hydration.pop(story.external_id, None)
+            source_data["items"] = list(items_by_id.values())
+            source_data["pending_hydration"] = pending_hydration
+            source_data["hydration_cursor"] = cursor + batch_size
+            source_data["hydrated_items_total"] = int(
+                source_data.get("hydrated_items_total") or 0
+            ) + sum(
+                1 for story in hydrated if story.raw_metadata.get("snapshot_hydrated")
+            )
+            save_payload(output, payload)
+    source_data["hydration_completed"] = (
+        bool(items_by_id)
+        and int(source_data.get("hydration_cursor") or 0) >= len(items_by_id)
+        and not pending_hydration
+    )
+    if hydrate_details:
         save_payload(output, payload)
     if hydrate_only:
         return source_data
@@ -375,6 +420,8 @@ async def sync_source(
         source_data["next_page"] = 1
         source_data["last_fingerprint"] = ""
         source_data["completion_reason"] = "refresh_round_started"
+        source_data["hydration_cursor"] = 0
+        source_data["hydration_completed"] = False
         save_payload(output, payload)
     if source_data.get("completed"):
         return source_data
@@ -428,6 +475,7 @@ async def sync_source(
         for item in serialized:
             items_by_id[str(item["external_id"])] = item
         source_data["items"] = list(items_by_id.values())
+        source_data["hydration_completed"] = False
         source_data["pages_crawled"] = int(source_data.get("pages_crawled") or 0) + 1
         pages_this_run += 1
         source_data["last_fingerprint"] = fingerprint
@@ -460,6 +508,29 @@ async def sync_source(
 async def main() -> int:
     args = parse_args()
     payload = load_payload(args.output.resolve(), args.sources, args.fresh)
+    if args.hydrate_only and not catalog_phase_complete(payload, args.sources):
+        summary = {
+            source_id: {
+                "completed": bool(
+                    payload.get("sources", {}).get(source_id, {}).get("completed")
+                ),
+                "last_error": payload.get("sources", {})
+                .get(source_id, {})
+                .get("last_error"),
+            }
+            for source_id in args.sources
+        }
+        print(
+            json.dumps(
+                {
+                    "event": "hydration_blocked",
+                    "reason": "catalog_phase_incomplete",
+                    "sources": summary,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 3
     service = AggregatorService()
     try:
         for source_id in args.sources:
@@ -501,6 +572,9 @@ async def main() -> int:
             "hydrated_items_total": payload["sources"].get(source_id, {}).get(
                 "hydrated_items_total", 0
             ),
+            "hydration_completed": payload["sources"].get(source_id, {}).get(
+                "hydration_completed", False
+            ),
             "completion_reason": payload["sources"].get(source_id, {}).get(
                 "completion_reason"
             ),
@@ -511,7 +585,9 @@ async def main() -> int:
     return (
         0
         if all(
-            not item["last_error"] and item["pending_hydration"] == 0
+            not item["last_error"]
+            and item["pending_hydration"] == 0
+            and (not args.hydrate_only or item["hydration_completed"])
             for item in summary.values()
         )
         else 2

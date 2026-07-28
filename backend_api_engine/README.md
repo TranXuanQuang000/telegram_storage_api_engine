@@ -72,14 +72,15 @@ extra pass for a quick diagnostic snapshot. Failed detail records are saved in
 because it is public domain.
 
 Production uses `.github/workflows/sync-novel-catalog.yml` every four hours.
-Each run advances a bounded number of pages per source, accepts a usable partial
-snapshot, commits the checkpoint, and lets Render auto-deploy it. A timeout,
-rate limit, retired domain, or anti-bot page from one source is recorded in
-`source_progress` and does not block the other sources.
+It first advances every configured catalog to its real terminal page. The
+detail/chapter-manifest queue remains locked until all sources pass that
+catalog barrier with at least one item and no source error. It then hydrates
+covers, metadata and chapter links with a monotonic checkpoint cursor. A
+timeout, rate limit, retired domain, or anti-bot page is recorded in
+`source_progress` and retried without losing the cursor.
 
 Use `--max-new-pages-per-source` to bound one scheduled run and
 `--refresh-completed` to begin a new freshness round after reaching the end.
-The GitHub job intentionally uses `--catalog-only`: catalog metadata is
-pre-indexed, while copyrighted chapter bodies remain on-demand at their
-verified public source. Gutenberg is the exception because its text is public
-domain.
+Only public chapter URLs and headers are persisted for hosted novel sources;
+chapter bodies remain on-demand at their verified public source. Gutenberg is
+the exception because its text is public domain.
