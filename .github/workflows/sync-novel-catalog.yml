@@ -90,6 +90,17 @@ jobs:
           --catalog-only
           --refresh-completed
 
+      - name: Hydrate covers, details and chapter manifests
+        continue-on-error: true
+        run: >-
+          python scripts/build_novel_catalog_snapshot.py
+          --sources hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex
+          --output data/novel_catalog.snapshot.json.gz
+          --hydrate-only
+          --hydrate-existing-limit 20
+          --detail-concurrency 2
+          --detail-delay-ms 1000
+
       - name: Validate the progressive snapshot
         run: >-
           python scripts/check_novel_snapshot_complete.py

@@ -110,6 +110,17 @@ def parse_args() -> argparse.Namespace:
         help="Skip story detail hydration and chapter-manifest collection",
     )
     parser.add_argument(
+        "--hydrate-only",
+        action="store_true",
+        help="Advance the persisted detail/chapter-manifest queue without scanning catalog pages",
+    )
+    parser.add_argument(
+        "--hydrate-existing-limit",
+        type=int,
+        default=int(os.getenv("NOVEL_SYNC_HYDRATE_EXISTING_LIMIT", "0")),
+        help="Maximum existing catalog items to hydrate per source in this run",
+    )
+    parser.add_argument(
         "--detail-concurrency",
         type=int,
         default=int(os.getenv("NOVEL_SYNC_DETAIL_CONCURRENCY", "3")),
@@ -132,6 +143,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--retries must be between 0 and 8")
     if args.checkpoint_every < 1:
         parser.error("--checkpoint-every must be positive")
+    if args.hydrate_existing_limit < 0:
+        parser.error("--hydrate-existing-limit cannot be negative")
+    if args.catalog_only and args.hydrate_only:
+        parser.error("--catalog-only and --hydrate-only cannot be combined")
     if not 1 <= args.detail_concurrency <= 8:
         parser.error("--detail-concurrency must be between 1 and 8")
     if not 0 <= args.detail_delay_ms <= 60_000:
@@ -260,6 +275,8 @@ async def sync_source(
     retries: int,
     checkpoint_every: int,
     hydrate_details: bool,
+    hydrate_only: bool,
+    hydrate_existing_limit: int,
     detail_concurrency: int,
     detail_delay_ms: int,
     output: Path,
@@ -306,6 +323,38 @@ async def sync_source(
             source_data["items"] = list(items_by_id.values())
             source_data["pending_hydration"] = pending_hydration
             save_payload(output, payload)
+    if hydrate_details and hydrate_existing_limit and items_by_id:
+        ordered_items = list(items_by_id.values())
+        cursor = int(source_data.get("hydration_cursor") or 0) % len(ordered_items)
+        batch_size = min(hydrate_existing_limit, len(ordered_items))
+        batch = [
+            Story.model_validate(ordered_items[(cursor + offset) % len(ordered_items)])
+            for offset in range(batch_size)
+        ]
+        hydrated, failures = await hydrate_stories(
+            connector,
+            batch,
+            concurrency=detail_concurrency,
+            delay_ms=detail_delay_ms,
+        )
+        for story in hydrated:
+            items_by_id[story.external_id] = story.model_dump(mode="json")
+        for external_id, error in failures.items():
+            pending_hydration[external_id] = error
+        for story in hydrated:
+            if story.raw_metadata.get("snapshot_hydrated"):
+                pending_hydration.pop(story.external_id, None)
+        source_data["items"] = list(items_by_id.values())
+        source_data["pending_hydration"] = pending_hydration
+        source_data["hydration_cursor"] = (cursor + batch_size) % len(ordered_items)
+        source_data["hydrated_items_total"] = int(
+            source_data.get("hydrated_items_total") or 0
+        ) + sum(
+            1 for story in hydrated if story.raw_metadata.get("snapshot_hydrated")
+        )
+        save_payload(output, payload)
+    if hydrate_only:
+        return source_data
     if source_data.get("completed") and refresh_completed:
         source_data["completed"] = False
         source_data["next_page"] = 1
@@ -410,6 +459,8 @@ async def main() -> int:
                 retries=args.retries,
                 checkpoint_every=args.checkpoint_every,
                 hydrate_details=not args.catalog_only,
+                hydrate_only=args.hydrate_only,
+                hydrate_existing_limit=args.hydrate_existing_limit,
                 detail_concurrency=args.detail_concurrency,
                 detail_delay_ms=args.detail_delay_ms,
                 output=args.output.resolve(),
@@ -427,6 +478,12 @@ async def main() -> int:
             "last_error": payload["sources"].get(source_id, {}).get("last_error"),
             "pending_hydration": len(
                 payload["sources"].get(source_id, {}).get("pending_hydration", {})
+            ),
+            "hydration_cursor": payload["sources"].get(source_id, {}).get(
+                "hydration_cursor", 0
+            ),
+            "hydrated_items_total": payload["sources"].get(source_id, {}).get(
+                "hydrated_items_total", 0
             ),
             "completion_reason": payload["sources"].get(source_id, {}).get(
                 "completion_reason"

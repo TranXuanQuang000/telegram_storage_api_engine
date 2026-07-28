@@ -153,3 +153,19 @@ test('Zod Schemas - Strict compliance with API Contract', () => {
   const validHealth = { status: 'healthy', error_rate: 0.0 };
   assert.doesNotThrow(() => HealthMetricsSchema.parse(validHealth));
 });
+
+test('scheduled novel sync advances a bounded detail and chapter-manifest queue', () => {
+  const workflow = fs.readFileSync(
+    new URL('../.github/workflows/sync-novel-catalog.yml', import.meta.url),
+    'utf8',
+  );
+  const builder = fs.readFileSync(
+    new URL('../backend_api_engine/scripts/build_novel_catalog_snapshot.py', import.meta.url),
+    'utf8',
+  );
+  assert.match(workflow, /--hydrate-only/);
+  assert.match(workflow, /--hydrate-existing-limit 20/);
+  assert.match(builder, /hydration_cursor/);
+  assert.match(builder, /hydrated_items_total/);
+  assert.match(builder, /if hydrate_only:/);
+});
