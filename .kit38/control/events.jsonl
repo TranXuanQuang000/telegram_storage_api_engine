@@ -22,3 +22,4 @@
 {"at":"2026-07-28T05:03:50.874114+00:00","backup_id":"v21-8261905ba9fe4347a8d5f5376b99ad63","changed":["status","work_units"],"event":"action_result_reported","previous_version":21,"version":22}
 {"at":"2026-07-28T05:04:08.999281+00:00","backup_id":"v22-7f8b6f8902f1424881f168b245857c9e","changed":["status","work_units"],"event":"task_graph_planned","previous_version":22,"version":23}
 {"at":"2026-07-28T05:04:09.332841+00:00","backup_id":"v23-0263e969b3d24b5fb1fa52b55e188649","changed":["status","task_id","work_units"],"event":"action_packet_issued","previous_version":23,"version":24}
+{"at":"2026-07-28T05:40:09.074887+00:00","backup_id":"v24-ea3bd58d69a5497abfe80c333131d393","changed":["status","work_units"],"event":"action_result_reported","previous_version":24,"version":25}

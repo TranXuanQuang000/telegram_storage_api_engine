@@ -1,0 +1,63 @@
+{
+  "status": "COMPLETE",
+  "verified_at": "2026-07-28T05:38:00Z",
+  "source_commits": {
+    "web_and_novel_queue": "c99519f8a6a81a67160bf5017d90c4b6dc1bb4a0",
+    "novel_snapshot": "00329ff7168046ca863317e779438e0077124ae5",
+    "manga_manifest_scheduler": "314c78aa516257b1ed906c58a943a39c5c8685c0"
+  },
+  "validation": {
+    "frontend_tests": "38 passed",
+    "novel_backend_tests": "118 passed",
+    "manga_backend_tests": "12 passed",
+    "lint_errors": 0,
+    "known_lint_warnings": 2
+  },
+  "cloudflare_pages": {
+    "production_url": "https://muctruyen.pages.dev",
+    "deployment_url": "https://5ebc786b.muctruyen.pages.dev",
+    "novel_page_status": 200,
+    "new_novel_ui_visible": true,
+    "novel_catalog_total": 5489,
+    "page_items_from_backend": 12,
+    "page_items_with_covers": 12,
+    "first_hot_item_chapter_count": 1518
+  },
+  "render": {
+    "novel_service_commit": "00329ff7168046ca863317e779438e0077124ae5",
+    "novel_service_status": "live",
+    "manga_service_status": "ok",
+    "manga_database": "connected",
+    "manifest_batches": {
+      "nettruyen": {
+        "updated": 4,
+        "failed": 0
+      },
+      "truyenqq": {
+        "updated": 4,
+        "failed": 0
+      }
+    }
+  },
+  "novel_queue": {
+    "workflow_run": "30331880534",
+    "status": "succeeded",
+    "duration": "3m 6s",
+    "schedule": "every 4 hours",
+    "cursor_persisted": true,
+    "truyenfull_hydrated_this_run": 20,
+    "hako_pending_after_source_403": 20,
+    "deployment_snapshot_chapter_headers_compacted": 4023,
+    "chapter_counts_preserved": true
+  },
+  "sites": {
+    "version": 17,
+    "status": "succeeded",
+    "url": "https://muc-doc-truyen.txquang2109.chatgpt.site"
+  },
+  "storage_boundary": {
+    "catalog_metadata_covers_and_chapter_manifests": "prefetched progressively",
+    "comic_pages_and_novel_bodies": "loaded and cached on demand; not mass-rehosted",
+    "source_classification": "NetTruyen and TruyenQQ are comic sources, not novel sources"
+  }
+}
