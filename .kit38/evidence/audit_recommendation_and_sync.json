@@ -1,0 +1,20 @@
+{
+  "status": "COMPLETE",
+  "findings": [
+    {
+      "id": "ranking-quality-before-hotness",
+      "root_cause": "Community recommendations sorted primarily by average score and only used popularity as a tie breaker.",
+      "resolution": "Introduce a deterministic hot score combining logarithmic popularity, verified quality, positivity and freshness."
+    },
+    {
+      "id": "personal-shelf-rating-sort",
+      "root_cause": "Personalized shelves requested sort=rating, which did not explicitly represent hotness.",
+      "resolution": "Add and use sort=hot while preserving genre constraints and history exclusions."
+    },
+    {
+      "id": "sync-storage-boundary",
+      "root_cause": "The resumable snapshot pipeline indexes public metadata while protected chapter bodies are intentionally on-demand.",
+      "resolution": "Run the existing resumable catalog pipeline; only archive content with an explicit rights basis or public-domain status."
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "ambition_contract_hash": null,
+  "created_at": "2026-07-28T04:29:12.324819+00:00",
+  "graph_id": "33cd17a1-7bb5-47c1-8c84-0085a23a753e",
+  "high_ambition": false,
+  "reports": {},
+  "run_id": "859dbf85-63c4-4ac8-a8ae-c57951397781",
+  "schema_version": "1.0",
+  "tasks": [
+    {
+      "acceptance_checks": [
+        "Build and tests pass",
+        "Production recommendations expose hot-first ordering",
+        "Production catalog and health endpoints respond successfully"
+      ],
+      "action_id": "bcae21c4-a816-4f25-b35d-2dc7fe28b611",
+      "allowed_scope": [
+        "entire project",
+        "Render service",
+        "Sites production deployment"
+      ],
+      "ambition_trace": {},
+      "approval_required": false,
+      "attempts": 1,
+      "completion_evidence": [],
+      "dependencies": [],
+      "description": "Run the verification suite, publish backend/frontend changes, and verify production behavior.",
+      "expected_output_schema": "VerificationResult",
+      "last_error": null,
+      "merge_dependencies": [],
+      "owner": "control-plane",
+      "required_capabilities": [],
+      "required_skills": [],
+      "retry_budget": 1,
+      "risk_tier": "MEDIUM",
+      "status": "RUNNING",
+      "task_id": "verify_and_publish",
+      "timeout_seconds": 2400,
+      "work_product_type": "VERTICAL_SLICE"
+    }
+  ],
+  "updated_at": "2026-07-28T04:29:12.579886+00:00",
+  "version": 2,
+  "vertical_slice_is_terminal": null
+}

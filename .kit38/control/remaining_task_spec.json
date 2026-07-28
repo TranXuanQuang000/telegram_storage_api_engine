@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "task_id": "implement_hot_ranking",
+      "description": "Implement and test a deterministic hot-story ranking layer for recommendations.",
+      "dependencies": [],
+      "allowed_scope": ["app", "components", "lib", "tests"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "Hot stories rank ahead of low-signal stories",
+        "Personal relevance remains a ranking signal",
+        "Tests cover ordering and fallback behavior"
+      ],
+      "timeout_seconds": 1800
+    },
+    {
+      "task_id": "run_resumable_sync",
+      "description": "Run the resumable metadata synchronization and authorized/public-domain content archive pipeline.",
+      "dependencies": ["implement_hot_ranking"],
+      "allowed_scope": ["backend_api_engine", "scripts", ".github", "data"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "Synchronization starts from the saved cursor",
+        "Progress remains observable",
+        "Failures from one source do not stop all other sources"
+      ],
+      "timeout_seconds": 3600
+    },
+    {
+      "task_id": "verify_and_publish",
+      "description": "Run the verification suite, publish backend/frontend changes, and verify production behavior.",
+      "dependencies": ["run_resumable_sync"],
+      "allowed_scope": ["entire project", "Render service", "Sites production deployment"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "Build and tests pass",
+        "Production recommendations expose hot-first ordering",
+        "Production catalog and health endpoints respond successfully"
+      ],
+      "timeout_seconds": 2400
+    }
+  ]
+}

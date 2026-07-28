@@ -88,7 +88,7 @@ export function PersonalizedHomeShelves() {
           setReady(true);
         }
         if (!favoriteRows.length) {
-          starterRows = await fetchStories(new URLSearchParams({ sort: "rating", limit: "16" }));
+          starterRows = await fetchStories(new URLSearchParams({ sort: "hot", limit: "16" }));
           favoriteRows = starterRows.slice(0, 8);
         }
 
@@ -102,11 +102,11 @@ export function PersonalizedHomeShelves() {
           .map(([genre]) => genre);
         let suggested = starterRows.slice(8, 16);
         if (hasPersonalData) {
-          const recommendationParams = new URLSearchParams({ sort: "rating", limit: "16" });
+          const recommendationParams = new URLSearchParams({ sort: "hot", limit: "16" });
           favoriteGenres.forEach((genre) => recommendationParams.append("include", genre));
           suggested = await fetchStories(recommendationParams);
           if (!suggested.length && favoriteGenres.length > 1) {
-            const relaxed = new URLSearchParams({ sort: "rating", limit: "16" });
+            const relaxed = new URLSearchParams({ sort: "hot", limit: "16" });
             relaxed.append("include", favoriteGenres[0]);
             suggested = await fetchStories(relaxed);
           }

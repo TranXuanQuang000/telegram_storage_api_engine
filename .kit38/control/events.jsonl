@@ -1,0 +1,12 @@
+{"at":"2026-07-28T04:18:13.265327+00:00","event":"project_initialized","project_id":"muc-reader-nova","version":1,"workspace_id":"54799487-8b6c-4114-92e8-677af14ce158"}
+{"at":"2026-07-28T04:19:39.307943+00:00","backup_id":"v1-3a9d59513c0b43f9aedc9bd4ba911d12","changed":["status","work_units"],"event":"task_graph_planned","previous_version":1,"version":2}
+{"at":"2026-07-28T04:19:39.613646+00:00","backup_id":"v2-e8696f330cd24de0b6c1089cde7a2f70","changed":["status","task_id","work_units"],"event":"action_packet_issued","previous_version":2,"version":3}
+{"at":"2026-07-28T04:22:12.518606+00:00","backup_id":"v3-7d17cc45f49a4bcc91321ef4d4bc00cd","changed":["status","work_units"],"event":"action_result_reported","previous_version":3,"version":4}
+{"at":"2026-07-28T04:25:44.817506+00:00","backup_id":"v4-30bda078b5db4fd18a67eb2d28ea09f5","changed":["status","work_units"],"event":"task_graph_planned","previous_version":4,"version":5}
+{"at":"2026-07-28T04:25:45.154101+00:00","backup_id":"v5-eb4ab584ea9b45faa7d665207b5a4c5e","changed":["status","task_id","work_units"],"event":"action_packet_issued","previous_version":5,"version":6}
+{"at":"2026-07-28T04:26:45.047205+00:00","backup_id":"v6-e49e404514884b18a58b97673c559491","changed":["status","work_units"],"event":"action_result_reported","previous_version":6,"version":7}
+{"at":"2026-07-28T04:28:52.516641+00:00","backup_id":"v7-5961028864dd46f887dc3509c38ab483","changed":["status","work_units"],"event":"task_graph_planned","previous_version":7,"version":8}
+{"at":"2026-07-28T04:28:52.849250+00:00","backup_id":"v8-a296020d2b1c43d5915c08ebd06ae984","changed":["status","task_id","work_units"],"event":"action_packet_issued","previous_version":8,"version":9}
+{"at":"2026-07-28T04:28:59.245413+00:00","backup_id":"v9-74adcdbdf4f3447b899b4b7732d1ff73","changed":["status","work_units"],"event":"action_result_reported","previous_version":9,"version":10}
+{"at":"2026-07-28T04:29:12.347935+00:00","backup_id":"v10-0e4c01497bff4af4bc1a4fa4c0437710","changed":["status","work_units"],"event":"task_graph_planned","previous_version":10,"version":11}
+{"at":"2026-07-28T04:29:12.602880+00:00","backup_id":"v11-6d44eafac88d4d35b44872818a7d8309","changed":["status","task_id","work_units"],"event":"action_packet_issued","previous_version":11,"version":12}

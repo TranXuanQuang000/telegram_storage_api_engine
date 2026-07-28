@@ -8,6 +8,7 @@ import {
   type StoryDetailData,
 } from "./catalog";
 import { getCommunityReviewSignals, type CommunityReviewSignal } from "./review-signals";
+import { calculateHotScore } from "./hot-ranking";
 import { extractReferenceTitle, titleSimilarity } from "./search-utils";
 
 export { extractReferenceTitle } from "./search-utils";
@@ -190,11 +191,13 @@ export async function buildAiRecommendationContext(
       const tagOverlap = resolved.reference ? overlap(resolved.reference.discoveryTags, story.discoveryTags) : 0;
       const verifiedRating = story.scoreKind === "community" ? story.score ?? 0 : 0;
       const ratingConfidence = Math.min(3, Math.log10((story.ratingVotes ?? 0) + 1));
+      const hotBoost = calculateHotScore(story) * 0.08;
       const score = genreOverlap * 3.2
         + tagOverlap * 1.5
         + constraints.requiredGenres.length * 2.2
         + verifiedRating * 1.15
         + ratingConfidence
+        + hotBoost
         - (historySlugs.has(story.slug) ? 4 : 0);
       return { story, score };
     })

@@ -1,0 +1,17 @@
+{
+  "tasks": [
+    {
+      "task_id": "verify_and_publish",
+      "description": "Run the verification suite, publish backend/frontend changes, and verify production behavior.",
+      "dependencies": [],
+      "allowed_scope": ["entire project", "Render service", "Sites production deployment"],
+      "risk_tier": "MEDIUM",
+      "acceptance_checks": [
+        "Build and tests pass",
+        "Production recommendations expose hot-first ordering",
+        "Production catalog and health endpoints respond successfully"
+      ],
+      "timeout_seconds": 2400
+    }
+  ]
+}

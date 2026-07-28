@@ -1,0 +1,4 @@
+{
+  "status": "COMPLETE",
+  "summary": "Resumable catalog synchronization is running in the background and observable through checkpoint and log files."
+}

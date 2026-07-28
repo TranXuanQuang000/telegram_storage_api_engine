@@ -1,0 +1,18 @@
+{
+  "status": "COMPLETE",
+  "started_at": "2026-07-28T11:24:59+07:00",
+  "process_id": 21072,
+  "script": "backend_api_engine/scripts/run_full_catalog_sync.ps1",
+  "progress_log": "backend_api_engine/sync-logs/novel-full-sync.log",
+  "stdout_log": "backend_api_engine/sync-logs/novel-background-launch.out.log",
+  "stderr_log": "backend_api_engine/sync-logs/novel-background-launch.err.log",
+  "before_items": 3260,
+  "observed_items": 3400,
+  "observed_sources": {
+    "hako": 300,
+    "truyenfull": 2980,
+    "gutendex": 120
+  },
+  "resumable": true,
+  "storage_policy": "Catalog metadata and chapter manifests are synchronized. Public-domain or explicitly authorized content may be archived; protected chapter bodies remain on-demand."
+}

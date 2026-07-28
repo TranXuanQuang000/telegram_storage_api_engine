@@ -1,0 +1,21 @@
+{
+  "ambition_contract_hash": null,
+  "ambition_profile": "BALANCED",
+  "ambition_state": null,
+  "completion_stage": "NOT_STARTED",
+  "created_at": "2026-07-28T04:18:13.196813+00:00",
+  "current_phase": "3",
+  "environment_fingerprint": "978c7c96304bf21d8974d3e69ca3971899853d4a7fa817df6fa4b438f0eca5ea",
+  "gate_spec_hash": "05307a48932d4670d8960a0315b8bc5843a7c1b2df5c1225dced541d0ce5382f",
+  "phase_attempt_id": "62ed69f2-275f-443f-8a29-350391a094ae",
+  "project_id": "muc-reader-nova",
+  "run_id": "859dbf85-63c4-4ac8-a8ae-c57951397781",
+  "schema_version": "2.0",
+  "status": "PLANNING",
+  "task_id": "run_resumable_sync",
+  "updated_at": "2026-07-28T04:29:12.346816+00:00",
+  "verifier_hash": "76fd2dd03c584dbf41477b03a781f54da80d1ac87a95f0f378ec6b34ab600016",
+  "version": 11,
+  "work_units": 10,
+  "workspace_id": "54799487-8b6c-4114-92e8-677af14ce158"
+}

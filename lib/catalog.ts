@@ -2,6 +2,7 @@ import { deriveAutoTags, inferContentRating } from "./auto-tags";
 import { getAniListRatingSignals, getExternalRating, type RatingSignal } from "./external-ratings";
 import { aggregateRatings, type RatingAggregate } from "./ratings";
 import { getCommunityReviewSignals } from "./review-signals";
+import { calculateHotScore, compareHotStories } from "./hot-ranking";
 import { normalizeTitle, titleSimilarity } from "./search-utils";
 import { getMangaDexLatestStories, getMangaDexStory, searchMangaDexStories } from "./sources/mangadex";
 import { comicApiCandidates, contentApiHeaders, contentApiSourceName, getContentApiConfiguration } from "./content-api";
@@ -433,16 +434,20 @@ export async function getCommunityRecommendations(): Promise<StoryCardData[]> {
       const quality = (story.score ?? 0) * 18
         + Math.min(16, Math.log10((story.ratingVotes ?? 0) + 1) * 5)
         + (review?.qualityScore ?? 0) * .24;
-      return {
+      const hotness = calculateHotScore({
         ...story,
         recommendationScore: quality,
+      });
+      return {
+        ...story,
+        recommendationScore: hotness,
         recommendationReason: reviewPositive === null
-          ? `${(story.ratingVotes ?? 0).toLocaleString("vi-VN")} lượt chấm đã xác minh`
-          : `${Math.round(reviewPositive * 100)}% review tích cực`,
+          ? `Đang hot · ${(story.ratingVotes ?? 0).toLocaleString("vi-VN")} tín hiệu cộng đồng`
+          : `Đang hot · ${Math.round(reviewPositive * 100)}% review tích cực`,
       };
     })
     .filter((story) => (story.score ?? 0) >= 3.65)
-    .sort((left, right) => (right.recommendationScore ?? 0) - (left.recommendationScore ?? 0));
+    .sort(compareHotStories);
   return wellRated.slice(0, 6);
 }
 
@@ -712,7 +717,7 @@ export async function getFilteredDiscoverCatalog({
     }
     candidates = [...new Map(candidates.map((story) => [story.id, story])).values()];
 
-    const needsCommunityRating = sort === "rating" || minScore > 0;
+    const needsCommunityRating = sort === "rating" || sort === "hot" || minScore > 0;
     if (needsCommunityRating) candidates = await enrichStoriesWithRatings(candidates);
 
     const filtered = candidates.filter((story) => {
@@ -730,6 +735,7 @@ export async function getFilteredDiscoverCatalog({
     });
 
     filtered.sort((left, right) => {
+      if (sort === "hot") return compareHotStories(left, right);
       if (sort === "rating") {
         const verifiedDifference = Number(right.scoreKind === "community") - Number(left.scoreKind === "community");
         return verifiedDifference
