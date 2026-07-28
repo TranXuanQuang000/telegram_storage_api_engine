@@ -1,0 +1,4 @@
+{
+  "status": "COMPLETE",
+  "summary": "Hot-first recommendations were tested and published; production health/catalog checks pass and the resumable sync is running."
+}

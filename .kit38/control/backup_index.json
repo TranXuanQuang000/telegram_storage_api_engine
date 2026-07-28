@@ -83,6 +83,13 @@
       "path": ".kit38/control/backups/v11-6d44eafac88d4d35b44872818a7d8309.json",
       "sha256": "a5b41470c9670702adf797ed55d2ff6d557dbeb8a743f1d8f0d886cdc030edd6",
       "state_version": 11
+    },
+    {
+      "backup_id": "v12-e57c4a4b504c40eaac3eabb9884ddd1f",
+      "created_at": "2026-07-28T04:42:26.855672+00:00",
+      "path": ".kit38/control/backups/v12-e57c4a4b504c40eaac3eabb9884ddd1f.json",
+      "sha256": "0a403cb7d5e457a92075d4862b94d5f8b849e9e6b74f8881f54bcd36c174477f",
+      "state_version": 12
     }
   ],
   "schema_version": "1.0"

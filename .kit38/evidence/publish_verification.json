@@ -1,0 +1,26 @@
+{
+  "status": "COMPLETE",
+  "tests": {
+    "frontend": "35 passed, 0 failed",
+    "backend": "117 passed",
+    "clean_build": "passed"
+  },
+  "deployment": {
+    "provider": "Sites",
+    "version": 16,
+    "status": "succeeded",
+    "url": "https://muc-doc-truyen.txquang2109.chatgpt.site",
+    "commit": "547e958d72b90d79c905159a170a639eed42701a"
+  },
+  "production_checks": {
+    "health_status": 200,
+    "hot_catalog_status": 200,
+    "hot_catalog_limit": 5
+  },
+  "sync": {
+    "process_id": 2044,
+    "status": "running",
+    "observed_items": 3591,
+    "resumable": true
+  }
+}
