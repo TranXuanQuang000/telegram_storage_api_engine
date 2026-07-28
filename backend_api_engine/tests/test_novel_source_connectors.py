@@ -140,6 +140,46 @@ async def test_public_novel_source_fixture_contract(case):
     await connector.close()
 
 
+@pytest.mark.asyncio
+async def test_tangthuvien_mirror_catalog_contract():
+    html = """
+    <html><body>
+      <main>
+        <a href="/doc-quyen-dich-kiem-thu" title="[Dịch] Kiếm Thử">
+          <img src="/covers/kiem-thu.jpg" alt="[Dịch] Kiếm Thử">
+        </a>
+        <a href="/doc-quyen-dich-truyen-hai">[Dịch] Truyện Hai</a>
+      </main>
+    </body></html>
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/truyen-moi"
+        return httpx.Response(
+            200,
+            text=html,
+            headers={"Content-Type": "text/html; charset=utf-8"},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    connector = TangThuVienConnector(
+        base_url="https://tangthuvien.org",
+        client=client,
+    )
+
+    catalog = await connector.fetch_catalog(page=1, limit=20)
+
+    assert [item.external_id for item in catalog.stories] == [
+        "doc-quyen-dich-kiem-thu",
+        "doc-quyen-dich-truyen-hai",
+    ]
+    assert catalog.stories[0].title == "[Dịch] Kiếm Thử"
+    assert catalog.stories[0].cover_url == (
+        "https://tangthuvien.org/covers/kiem-thu.jpg"
+    )
+    await connector.close()
+
+
 def test_new_sources_are_registered_in_api_and_aggregator():
     required = {
         "hako",

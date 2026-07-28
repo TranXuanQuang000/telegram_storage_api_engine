@@ -70,7 +70,9 @@ class TangThuVienConnector(BaseConnector):
             # Tàng Thư Viện may ignore unknown filters; never synthesize a
             # private/search endpoint or submit an interactive form.
             params["genre"] = category
-        response = await self.get(f"{self.base_url}/tong-hop", params=params)
+        modern = (urlparse(self.base_url).hostname or "").lower() == "tangthuvien.org"
+        catalog_path = "/truyen-moi" if modern else "/tong-hop"
+        response = await self.get(f"{self.base_url}{catalog_path}", params=params)
         soup = parse_public_html(
             response,
             expected_selectors=(
@@ -78,6 +80,7 @@ class TangThuVienConnector(BaseConnector):
                 ".book-list",
                 ".book-mid-info",
                 "article.story-item",
+                "a[href*='/doc-quyen-']",
             ),
         )
 
@@ -85,13 +88,18 @@ class TangThuVienConnector(BaseConnector):
             ".book-img-text li, .book-list .book-item, "
             ".book-mid-info, article.story-item"
         )
+        if not items and modern:
+            items = list(soup.select("a[href*='/doc-quyen-']"))
         stories = []
         seen_slugs = set()
         for item in items:
             title_el = item.select_one(
                 ".book-mid-info h4 a, h4 a[href*='/doc-truyen/'], "
-                "h3 a[href*='/doc-truyen/'], a.story-name"
+                "h3 a[href*='/doc-truyen/'], a.story-name, "
+                "a[href*='/doc-quyen-']"
             )
+            if item.name == "a" and item.get("href"):
+                title_el = item
             if not title_el or not title_el.get("href"):
                 continue
             href = str(title_el.get("href"))
@@ -100,8 +108,21 @@ class TangThuVienConnector(BaseConnector):
                 continue
             seen_slugs.add(slug)
 
+            title = clean_text(
+                title_el.get("title")
+                or title_el.get_text()
+                or (
+                    title_el.select_one("img").get("alt")
+                    if title_el.select_one("img")
+                    else ""
+                )
+            )
+            if not title:
+                continue
             external_url = clean_url_slashes(urljoin(str(response.url), href))
             cover_el = item.select_one(".book-img-box img, .book-img img, img")
+            if not cover_el and item.parent:
+                cover_el = item.parent.select_one("img")
             cover = None
             if cover_el:
                 cover = cover_el.get("data-original") or cover_el.get("data-src") or cover_el.get("src")
@@ -125,7 +146,7 @@ class TangThuVienConnector(BaseConnector):
                     source_id=self.source_id,
                     external_id=slug,
                     external_url=external_url,
-                    title=clean_text(title_el.get_text()),
+                    title=title,
                     slug=slug,
                     author=clean_text(author_el.get_text()) if author_el else None,
                     description=description_el.get_text("\n", strip=True) if description_el else None,
@@ -148,6 +169,8 @@ class TangThuVienConnector(BaseConnector):
                 "a.next, a[aria-label='Next']"
             )
         )
+        if modern and len(stories) >= limit:
+            has_more = True
         return CatalogFetchResult(
             stories=stories,
             total=None,
@@ -158,10 +181,15 @@ class TangThuVienConnector(BaseConnector):
         )
 
     async def fetch_story(self, identifier: str) -> Story:
+        modern = (urlparse(self.base_url).hostname or "").lower() == "tangthuvien.org"
         url = (
             identifier
             if identifier.startswith(("http://", "https://"))
-            else f"{self.base_url}/doc-truyen/{identifier.strip('/')}"
+            else (
+                f"{self.base_url}/{identifier.strip('/')}"
+                if modern
+                else f"{self.base_url}/doc-truyen/{identifier.strip('/')}"
+            )
         )
         response = await self.get(url)
         soup = parse_public_html(
@@ -179,7 +207,10 @@ class TangThuVienConnector(BaseConnector):
             ".book-info .author, a.author"
         )
         description_el = soup.select_one(".book-intro, .intro, .story-intro")
-        cover_el = soup.select_one(".book-img img, .book-information img, .book-detail img")
+        cover_el = soup.select_one(
+            ".book-img img, .book-information img, .book-detail img, "
+            "article img, main img"
+        )
         cover = None
         if cover_el:
             cover = cover_el.get("data-original") or cover_el.get("data-src") or cover_el.get("src")
@@ -197,13 +228,19 @@ class TangThuVienConnector(BaseConnector):
         seen_ids = set()
         chapter_selectors = (
             ".volume li a, #j-catalogWrap a, .chapter-list a, "
-            ".list-chapter a, a[href*='/doc-truyen/']"
+            ".list-chapter a, a[href*='/doc-truyen/'], a[href*='/chuong-']"
         )
         slug = self._story_slug(identifier)
         for chapter_el in soup.select(chapter_selectors):
             href = str(chapter_el.get("href") or "")
             parts = [part for part in urlparse(href).path.split("/") if part]
-            if "doc-truyen" not in parts or len(parts) < parts.index("doc-truyen") + 3:
+            if (
+                not modern
+                and (
+                    "doc-truyen" not in parts
+                    or len(parts) < parts.index("doc-truyen") + 3
+                )
+            ):
                 continue
             chapter_id = parts[-1]
             if not chapter_id or chapter_id in seen_ids:
@@ -251,12 +288,20 @@ class TangThuVienConnector(BaseConnector):
         story_identifier: str,
         chapter_identifier: str,
     ) -> ChapterContent:
+        modern = (urlparse(self.base_url).hostname or "").lower() == "tangthuvien.org"
         url = (
             chapter_identifier
             if chapter_identifier.startswith(("http://", "https://"))
             else (
-                f"{self.base_url}/doc-truyen/"
-                f"{story_identifier.strip('/')}/{chapter_identifier.strip('/')}"
+                (
+                    f"{self.base_url}/{story_identifier.strip('/')}/"
+                    f"{chapter_identifier.strip('/')}"
+                )
+                if modern
+                else (
+                    f"{self.base_url}/doc-truyen/"
+                    f"{story_identifier.strip('/')}/{chapter_identifier.strip('/')}"
+                )
             )
         )
         response = await self.get(url)
@@ -267,6 +312,7 @@ class TangThuVienConnector(BaseConnector):
                 ".j_readContent",
                 "#chapter-c",
                 ".chapter-content",
+                "article",
             ),
         )
         title_el = soup.select_one(
@@ -279,6 +325,7 @@ class TangThuVienConnector(BaseConnector):
                 ".j_readContent",
                 "#chapter-c",
                 ".chapter-content",
+                "article",
             ),
         )
         number_match = re.search(r"(\d+(?:\.\d+)?)", chapter_identifier)
@@ -294,7 +341,9 @@ class TangThuVienConnector(BaseConnector):
 
     async def health_check(self) -> bool:
         try:
-            response = await self.get(f"{self.base_url}/tong-hop", params={"page": 1})
+            modern = (urlparse(self.base_url).hostname or "").lower() == "tangthuvien.org"
+            path = "/truyen-moi" if modern else "/tong-hop"
+            response = await self.get(f"{self.base_url}{path}", params={"page": 1})
             parse_public_html(
                 response,
                 expected_selectors=(
@@ -302,6 +351,7 @@ class TangThuVienConnector(BaseConnector):
                     ".book-list",
                     ".book-mid-info",
                     "article.story-item",
+                    "a[href*='/doc-quyen-']",
                 ),
             )
             return True
