@@ -2,8 +2,12 @@
 
 import Link from "next/link";
 import { BookOpen, Bookmark, Check, Download, LoaderCircle, XCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { saveChapterOffline } from "../lib/offline-store";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  preloadChapterPages,
+  recommendedChapterPreloadConcurrency,
+  saveChapterOffline,
+} from "../lib/offline-store";
 import type { StoryCardData } from "../lib/catalog";
 
 export type StoryChapterItem = {
@@ -34,6 +38,27 @@ export function StoryActions({
   }>({ status: "idle", current: 0, total: 0, chapterName: "" });
 
   const cancelBatchRef = useRef(false);
+  const warmedChaptersRef = useRef(new Set<string>());
+
+  const warmChapter = useCallback(async (targetChapterId: string) => {
+    if (!targetChapterId || warmedChaptersRef.current.has(targetChapterId)) return;
+    warmedChaptersRef.current.add(targetChapterId);
+    try {
+      const response = await fetch(
+        `/api/download-manifest/${encodeURIComponent(targetChapterId)}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!response.ok) throw new Error(`WARM_CHAPTER_${response.status}`);
+      const manifest = await response.json() as { pages?: string[] };
+      const pages = manifest.pages?.filter(Boolean) ?? [];
+      if (!pages.length) throw new Error("WARM_CHAPTER_EMPTY");
+      await preloadChapterPages(pages, {
+        concurrency: Math.min(6, recommendedChapterPreloadConcurrency()),
+      });
+    } catch {
+      warmedChaptersRef.current.delete(targetChapterId);
+    }
+  }, []);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -58,6 +83,25 @@ export function StoryActions({
       }
     });
   }, [chapterId, story.latestChapter, story.slug]);
+
+  useEffect(() => {
+    if (!continueHref) return;
+    const connection = (navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }).connection;
+    if (
+      connection?.saveData
+      || connection?.effectiveType === "slow-2g"
+      || connection?.effectiveType === "2g"
+    ) return;
+    const match = continueHref.match(/^\/read\/([^?]+)/);
+    if (!match?.[1]) return;
+    const targetChapterId = decodeURIComponent(match[1]);
+    const handle = window.setTimeout(() => {
+      void warmChapter(targetChapterId);
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [continueHref, warmChapter]);
 
   // Lấy trực tiếp trạng thái Tủ truyện từ Tài khoản Server D1
   useEffect(() => {
@@ -202,7 +246,26 @@ export function StoryActions({
           {saved ? "Đã lưu vào tủ" : "Thêm vào tủ"}
         </button>
 
-        {continueHref ? <Link className="button button--paper" href={continueHref}><BookOpen aria-hidden="true" />{continueLabel}</Link> : null}
+        {continueHref ? (
+          <Link
+            className="button button--paper"
+            href={continueHref}
+            onMouseEnter={() => {
+              const match = continueHref.match(/^\/read\/([^?]+)/);
+              if (match?.[1]) void warmChapter(decodeURIComponent(match[1]));
+            }}
+            onFocus={() => {
+              const match = continueHref.match(/^\/read\/([^?]+)/);
+              if (match?.[1]) void warmChapter(decodeURIComponent(match[1]));
+            }}
+            onTouchStart={() => {
+              const match = continueHref.match(/^\/read\/([^?]+)/);
+              if (match?.[1]) void warmChapter(decodeURIComponent(match[1]));
+            }}
+          >
+            <BookOpen aria-hidden="true" />{continueLabel}
+          </Link>
+        ) : null}
 
         {chapters.length > 0 ? (
           <button

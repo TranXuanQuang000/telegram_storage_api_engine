@@ -1,6 +1,6 @@
-const STATIC_CACHE = "muc-static-v5";
-const PAGE_CACHE = "muc-pages-v5";
-const CHAPTER_CACHE = "muc-chapters-v5";
+const STATIC_CACHE = "muc-static-v6";
+const PAGE_CACHE = "muc-pages-v6";
+const CHAPTER_CACHE = "muc-chapters-v3";
 const READING_CACHE = "muc-reading-v1";
 const APP_SHELL = ["/", "/discover", "/library", "/downloads", "/offline", "/offline-reader.html", "/offline-text-reader.html", "/manifest.webmanifest"];
 const readerAssetFlights = new Map();
@@ -56,6 +56,26 @@ async function networkFirstAsset(request) {
 
 function stableReaderCacheKey(request) {
   const url = new URL(request.url);
+  if (url.origin === self.location.origin && url.pathname === "/api/media/manga-image") {
+    try {
+      const target = new URL(
+        url.searchParams.get("path") || "",
+        "https://manga-api.invalid",
+      );
+      if (
+        target.pathname === "/api/v1/image-proxy"
+        || target.pathname.startsWith("/api/v1/cached-image/")
+      ) {
+        target.searchParams.delete("expires");
+        target.searchParams.delete("sig");
+        target.searchParams.delete("retry");
+        url.searchParams.set("path", `${target.pathname}${target.search}`);
+        return new Request(url.href, { method: "GET" });
+      }
+    } catch {
+      return request;
+    }
+  }
   const signedProxy = url.pathname === "/api/v1/image-proxy";
   const cachedImage = url.pathname.startsWith("/api/v1/cached-image/");
   if (signedProxy || cachedImage) {
@@ -106,7 +126,10 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
 
-  if (url.origin !== self.location.origin) {
+  if (
+    url.origin !== self.location.origin
+    || url.pathname === "/api/media/manga-image"
+  ) {
     event.respondWith(fetchReaderAsset(request, event));
     return;
   }

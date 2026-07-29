@@ -182,6 +182,7 @@ test("source hub whitelists providers and blocks content for metadata-only sourc
 test("continuous comic and novel readers preload and append the next chapter", () => {
   const comic = source("components/ReaderClient.tsx");
   const novel = source("components/TextReaderClient.tsx");
+  const actions = source("components/StoryActions.tsx");
   const offlineStore = source("lib/offline-store.ts");
   const serviceWorker = source("public/sw.js");
   const css = source("app/globals.css");
@@ -197,6 +198,10 @@ test("continuous comic and novel readers preload and append the next chapter", (
   assert.match(offlineStore, /workerCount.*8/);
   assert.match(serviceWorker, /stableReaderCacheKey/);
   assert.match(serviceWorker, /readerAssetFlights/);
+  assert.match(serviceWorker, /url\.pathname === "\/api\/media\/manga-image"/);
+  assert.match(serviceWorker, /const CHAPTER_CACHE = "muc-chapters-v3"/);
+  assert.match(actions, /warmChapter/);
+  assert.match(actions, /preloadChapterPages/);
   const edgeImageRoute = source("app/api/media/manga-image/route.ts");
   assert.match(edgeImageRoute, /stableMangaImageIdentity/);
   assert.match(edgeImageRoute, /waitUntil\(cacheWrite\)/);

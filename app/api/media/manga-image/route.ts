@@ -26,6 +26,21 @@ function validateExpiry(target: URL, now = Math.floor(Date.now() / 1_000)) {
 export function stableMangaImageIdentity(target: URL) {
   if (target.pathname === "/api/v1/image-proxy") {
     const source = target.searchParams.get("source")?.trim().toLowerCase() ?? "";
+    const originKey = target.searchParams.get("origin")?.trim().toLowerCase() ?? "";
+    const imagePath = target.searchParams.get("path") ?? "";
+    if (originKey || imagePath) {
+      if (
+        !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(source)
+        || !/^[a-f0-9]{24}$/.test(originKey)
+        || !imagePath.startsWith("/")
+        || imagePath.startsWith("//")
+        || imagePath.includes("\\")
+        || imagePath.length > 4_096
+      ) {
+        throw new MangaApiError("Tham chiếu ảnh không hợp lệ", 502, "MANGA_API_IMAGE_REF_INVALID");
+      }
+      return `upstream-ref\n${source}\n${originKey}\n${imagePath}`;
+    }
     const originalValue = target.searchParams.get("url") ?? "";
     if (!/^[a-z0-9][a-z0-9_-]{1,63}$/.test(source)) {
       throw new MangaApiError("Nguồn ảnh không hợp lệ", 502, "MANGA_API_IMAGE_SOURCE_INVALID");
