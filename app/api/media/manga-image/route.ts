@@ -54,15 +54,15 @@ async function sha256Hex(value: string) {
 
 async function fetchWithRetry(target: URL) {
   let response: Response | null = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       response = await fetch(target.toString(), {
         headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif" },
       });
-      if (!TRANSIENT_STATUSES.has(response.status) || attempt === 1) return response;
+      if (!TRANSIENT_STATUSES.has(response.status) || attempt === 2) return response;
       await response.body?.cancel().catch(() => undefined);
     } catch (error) {
-      if (attempt === 1) throw error;
+      if (attempt === 2) throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
   }
