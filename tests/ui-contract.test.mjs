@@ -199,7 +199,7 @@ test("continuous comic and novel readers preload and append the next chapter", (
   assert.match(serviceWorker, /readerAssetFlights/);
   const edgeImageRoute = source("app/api/media/manga-image/route.ts");
   assert.match(edgeImageRoute, /stableMangaImageIdentity/);
-  assert.match(edgeImageRoute, /waitUntil\(edgeCache\.put/);
+  assert.match(edgeImageRoute, /waitUntil\(cacheWrite\)/);
   assert.match(edgeImageRoute, /X-Muc-Edge-Cache/);
   assert.match(edgeImageRoute, /attempt < 3/);
   assert.match(edgeImageRoute, /TRANSIENT_STATUSES/);
