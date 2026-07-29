@@ -101,20 +101,24 @@ export async function GET(request: Request) {
     return errorResponse(message, 403);
   }
 
-  const digest = await sha256Hex(identity);
-  const cacheKey = new Request(`${requestUrl.origin}/__muc-edge-image/${digest}`, { method: "GET" });
   const cacheStorage = globalThis.caches as CloudflareCacheStorage | undefined;
+  const ttlSeconds = Math.max(1, Math.min(expires - Math.floor(Date.now() / 1_000), MAX_EDGE_TTL_SECONDS));
   let edgeCache: Cache | null = null;
+  let cacheKey: Request | null = null;
   let cached: Response | undefined;
   try {
     edgeCache = cacheStorage
       ? cacheStorage.default ?? await cacheStorage.open("muc-edge-images-v1")
       : null;
-    cached = await edgeCache?.match(cacheKey);
+    if (edgeCache) {
+      const digest = await sha256Hex(identity);
+      cacheKey = new Request(`${requestUrl.origin}/__muc-edge-image/${digest}`, { method: "GET" });
+      cached = await edgeCache.match(cacheKey);
+    }
   } catch {
     edgeCache = null;
+    cacheKey = null;
   }
-  const ttlSeconds = Math.max(1, Math.min(expires - Math.floor(Date.now() / 1_000), MAX_EDGE_TTL_SECONDS));
   if (cached) return imageResponse(cached, ttlSeconds, "HIT");
 
   let upstream: Response | null;
@@ -140,7 +144,7 @@ export async function GET(request: Request) {
   }
 
   const response = imageResponse(upstream, ttlSeconds, "MISS");
-  if (edgeCache) {
+  if (edgeCache && cacheKey) {
     const cacheWrite = edgeCache.put(cacheKey, response.clone()).catch(() => undefined);
     try {
       waitUntil(cacheWrite);
