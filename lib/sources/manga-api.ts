@@ -173,14 +173,20 @@ export function resolveMangaApiApiUrl(relative: string) {
   return resolveKnownApiPath(relative).toString();
 }
 
-function resolveSignedImagePath(relative: string) {
+export function resolveMangaApiImageGatewayTarget(relative: string) {
   const url = resolveKnownApiPath(relative);
   const allowed = url.pathname === "/api/v1/image-proxy"
     || url.pathname.startsWith("/api/v1/cached-image/");
   if (!allowed) {
     throw new MangaApiError("Ảnh không dùng image gateway của Manga API", 502, "MANGA_API_IMAGE_PATH_INVALID");
   }
-  return url.toString();
+  return url;
+}
+
+function resolveSignedImagePath(relative: string) {
+  const target = resolveMangaApiImageGatewayTarget(relative);
+  const path = `${target.pathname}${target.search}`;
+  return `/api/media/manga-image?path=${encodeURIComponent(path)}`;
 }
 
 export function resolveMangaApiCoverUrl(value: string | null) {

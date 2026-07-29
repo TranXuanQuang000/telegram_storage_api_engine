@@ -197,6 +197,10 @@ test("continuous comic and novel readers preload and append the next chapter", (
   assert.match(offlineStore, /workerCount.*8/);
   assert.match(serviceWorker, /stableReaderCacheKey/);
   assert.match(serviceWorker, /readerAssetFlights/);
+  const edgeImageRoute = source("app/api/media/manga-image/route.ts");
+  assert.match(edgeImageRoute, /stableMangaImageIdentity/);
+  assert.match(edgeImageRoute, /waitUntil\(edgeCache\.put/);
+  assert.match(edgeImageRoute, /X-Muc-Edge-Cache/);
   assert.match(novel, /source-content\/wikisource/);
   assert.match(novel, /stream\.map\(\(loadedChapter, chapterPosition\)/);
   assert.match(novel, /Math\.floor\(total \* \.45\)/);

@@ -133,11 +133,15 @@ test("reader preserves chapter_api_data and renders only signed proxy URLs", asy
   assert.deepEqual(
     [...chapter.pages],
     [
-      "http://localhost:3100/api/v1/image-proxy?source=nettruyen&url=one&expires=200&sig=sig-1",
-      "http://localhost:3100/api/v1/image-proxy?source=nettruyen&url=two&expires=200&sig=sig-2",
+      "/api/media/manga-image?path=%2Fapi%2Fv1%2Fimage-proxy%3Fsource%3Dnettruyen%26url%3Done%26expires%3D200%26sig%3Dsig-1",
+      "/api/media/manga-image?path=%2Fapi%2Fv1%2Fimage-proxy%3Fsource%3Dnettruyen%26url%3Dtwo%26expires%3D200%26sig%3Dsig-2",
     ],
   );
   assert.ok(chapter.pages.every((url) => !url.includes("untrusted.example")));
+  const gatewayPath = new URL(chapter.pages[0], "https://muctruyen.pages.dev").searchParams.get("path");
+  const gatewayTarget = adapter.resolveMangaApiImageGatewayTarget(gatewayPath);
+  assert.equal(gatewayTarget.origin, "http://localhost:3100");
+  assert.equal(gatewayTarget.pathname, "/api/v1/image-proxy");
 });
 
 test("adapter rejects non-Manga-API paths instead of becoming an open proxy", () => {
@@ -151,6 +155,10 @@ test("adapter rejects non-Manga-API paths instead of becoming an open proxy", ()
   assert.throws(
     () => adapter.encodeMangaApiChapterId("/api/v1/admin/status", "1"),
     /Chapter path không đúng endpoint|path/,
+  );
+  assert.throws(
+    () => adapter.resolveMangaApiImageGatewayTarget("/api/v1/admin/status"),
+    /image gateway|không hợp lệ|path/i,
   );
 });
 
