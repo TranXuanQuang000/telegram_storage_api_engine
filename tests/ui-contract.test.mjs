@@ -182,8 +182,11 @@ test("source hub whitelists providers and blocks content for metadata-only sourc
 test("continuous comic and novel readers preload and append the next chapter", () => {
   const comic = source("components/ReaderClient.tsx");
   const novel = source("components/TextReaderClient.tsx");
+  const offlineStore = source("lib/offline-store.ts");
+  const serviceWorker = source("public/sw.js");
   const css = source("app/globals.css");
   assert.match(comic, /preloadChapterPages\(nextPages/);
+  assert.match(comic, /recommendedChapterPreloadConcurrency/);
   assert.match(comic, /preload\.loaded !== preload\.total/);
   assert.match(comic, /NEXT_CHAPTER_PRELOAD_INCOMPLETE/);
   assert.match(comic, /dataset\.pageReady === "true"/);
@@ -191,6 +194,9 @@ test("continuous comic and novel readers preload and append the next chapter", (
   assert.match(comic, /window\.setTimeout\(start, 0\)/);
   assert.match(comic, /stream\.map\(\(loadedChapter, chapterPosition\)/);
   assert.match(comic, /Math\.floor\(totalPages \* \.45\)/);
+  assert.match(offlineStore, /workerCount.*8/);
+  assert.match(serviceWorker, /stableReaderCacheKey/);
+  assert.match(serviceWorker, /readerAssetFlights/);
   assert.match(novel, /source-content\/wikisource/);
   assert.match(novel, /stream\.map\(\(loadedChapter, chapterPosition\)/);
   assert.match(novel, /Math\.floor\(total \* \.45\)/);

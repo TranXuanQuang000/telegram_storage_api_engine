@@ -23,7 +23,12 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { preloadChapterPages, queueProgress, saveChapterOffline } from "../lib/offline-store";
+import {
+  preloadChapterPages,
+  queueProgress,
+  recommendedChapterPreloadConcurrency,
+  saveChapterOffline,
+} from "../lib/offline-store";
 
 type ReaderChapter = {
   id: string;
@@ -100,22 +105,48 @@ export function ReaderClient({
   const tailChapterIndex = chapters.findIndex((chapter) => chapter.id === tailChapter?.id);
   const tailNextChapter = tailChapterIndex > 0 ? chapters[tailChapterIndex - 1] : null;
 
+  const imageOrigins = useMemo(() => {
+    const origins = new Set<string>();
+    for (const page of pages.slice(0, 4)) {
+      try {
+        origins.add(new URL(page).origin);
+      } catch {
+        // Invalid URLs are rejected by the adapter before reaching the reader.
+      }
+    }
+    return [...origins].slice(0, 2);
+  }, [pages]);
+
   useEffect(() => {
     streamRef.current = stream;
   }, [stream]);
 
   useEffect(() => {
+    const links = imageOrigins.map((origin) => {
+      const existing = [...document.head.querySelectorAll<HTMLLinkElement>('link[rel="preconnect"]')]
+        .find((link) => link.href === `${origin}/` || link.href === origin);
+      if (existing) return existing;
+      const link = document.createElement("link");
+      link.rel = "preconnect";
+      link.href = origin;
+      link.crossOrigin = "anonymous";
+      link.dataset.mucReader = "preconnect";
+      document.head.append(link);
+      return link;
+    });
+    return () => {
+      for (const link of links) {
+        if (link.dataset.mucReader === "preconnect") link.remove();
+      }
+    };
+  }, [imageOrigins]);
+
+  useEffect(() => {
     const controller = new AbortController();
-    const connection = (navigator as Navigator & {
-      connection?: { saveData?: boolean; effectiveType?: string };
-    }).connection;
-    const constrained = connection?.saveData
-      || connection?.effectiveType === "slow-2g"
-      || connection?.effectiveType === "2g";
     const start = () => {
       void preloadChapterPages(pages, {
         signal: controller.signal,
-        concurrency: constrained ? 2 : 4,
+        concurrency: recommendedChapterPreloadConcurrency(),
         onProgress: (progress) => {
           if (!controller.signal.aborted) {
             setChapterLoad({ ...progress, done: progress.loaded + progress.failed >= progress.total });
@@ -202,14 +233,8 @@ export function ReaderClient({
       const nextPages = manifest.pages?.filter(Boolean) ?? [];
       if (!nextPages.length) throw new Error("NEXT_CHAPTER_EMPTY");
       setStreamLoad("pages");
-      const connection = (navigator as Navigator & {
-        connection?: { saveData?: boolean; effectiveType?: string };
-      }).connection;
-      const constrained = connection?.saveData
-        || connection?.effectiveType === "slow-2g"
-        || connection?.effectiveType === "2g";
       const preload = await preloadChapterPages(nextPages, {
-        concurrency: constrained ? 2 : 4,
+        concurrency: recommendedChapterPreloadConcurrency(),
       });
       if (
         preload.total !== nextPages.length ||
@@ -504,8 +529,8 @@ export function ReaderClient({
                   height={2200}
                   sizes="(max-width: 1184px) 100vw, 1184px"
                   priority={chapterPosition === 0 && index < 2}
-                  loading={chapterPosition === 0 && index < 2 ? "eager" : "lazy"}
-                  fetchPriority={chapterPosition === 0 && index < 2 ? "high" : "auto"}
+                  loading={chapterPosition === 0 ? "eager" : "lazy"}
+                  fetchPriority={chapterPosition === 0 && index < 4 ? "high" : "auto"}
                   decoding="async"
                   unoptimized
                   onLoad={(event) => {

@@ -115,12 +115,39 @@ export async function storageEstimate() {
 }
 
 async function fetchCacheablePage(url: string, signal?: AbortSignal) {
-  try {
-    return await fetch(url, { mode: "cors", cache: "force-cache", signal });
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    return await fetch(url, { mode: "no-cors", cache: "force-cache", signal });
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(url, { mode: "cors", cache: "force-cache", signal });
+      if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 1) return response;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 180 * (attempt + 1)));
   }
+  try {
+    return await fetch(url, { mode: "no-cors", cache: "force-cache", signal });
+  } catch (error) {
+    throw lastError ?? error;
+  }
+}
+
+export function recommendedChapterPreloadConcurrency() {
+  if (typeof navigator === "undefined") return 4;
+  const connection = (navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string; downlink?: number };
+    deviceMemory?: number;
+  }).connection;
+  if (
+    connection?.saveData
+    || connection?.effectiveType === "slow-2g"
+    || connection?.effectiveType === "2g"
+  ) return 2;
+  if (connection?.effectiveType === "3g") return 4;
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
+  const processors = navigator.hardwareConcurrency || 4;
+  return memory >= 6 && processors >= 6 && (connection?.downlink ?? 10) >= 8 ? 8 : 6;
 }
 
 export async function preloadChapterPages(
@@ -137,7 +164,7 @@ export async function preloadChapterPages(
     caches.open(CHAPTER_CACHE),
   ]);
   let cursor = 0;
-  const workerCount = Math.min(Math.max(Math.floor(concurrency) || 1, 1), 4, urls.length);
+  const workerCount = Math.min(Math.max(Math.floor(concurrency) || 1, 1), 8, urls.length);
 
   async function loadNext() {
     while (!signal?.aborted) {
@@ -150,7 +177,9 @@ export async function preloadChapterPages(
         if (!cached) {
           const response = await fetchCacheablePage(url, signal);
           if (!response.ok && response.type !== "opaque") throw new Error(`PAGE_${response.status}`);
-          await readingCache.put(url, response.clone());
+          if (!navigator.serviceWorker?.controller) {
+            await readingCache.put(url, response.clone());
+          }
         }
         progress.loaded += 1;
       } catch {

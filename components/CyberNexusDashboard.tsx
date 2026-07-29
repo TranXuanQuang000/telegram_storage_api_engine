@@ -138,6 +138,53 @@ function statusTone(ok: boolean) {
     : "border-rose-500/30 bg-rose-500/10 text-rose-300";
 }
 
+function CrawlProgress({
+  label,
+  completed,
+  detail,
+  error,
+}: {
+  label: string;
+  completed: boolean;
+  detail: string;
+  error?: boolean;
+}) {
+  return (
+    <div
+      className="mt-3 min-w-44"
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={completed ? 100 : undefined}
+    >
+      <div className="mb-1.5 flex items-center justify-between gap-3 text-[10px]">
+        <span className="text-slate-500">{label}</span>
+        <span className={error ? "text-rose-300" : completed ? "text-emerald-300" : "text-cyan-300"}>
+          {completed ? "100%" : detail}
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+        <div
+          className={
+            completed
+              ? "h-full w-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400"
+              : error
+                ? "h-full w-1/3 rounded-full bg-rose-400/80"
+                : "h-full w-1/3 animate-[crawl-progress_1.5s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-cyan-400 via-violet-400 to-fuchsia-400"
+          }
+        />
+      </div>
+      <style jsx>{`
+        @keyframes crawl-progress {
+          0% { transform: translateX(-110%); }
+          100% { transform: translateX(310%); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function ServiceCard({ service, icon: Icon }: { service: ServiceStatus; icon: typeof Server }) {
   return (
     <article className="rounded-2xl border border-slate-800 bg-[#0a0f19]/90 p-4 shadow-xl">
@@ -358,13 +405,13 @@ export function CyberNexusDashboard() {
             <StatCard
               label="Kho truyện tranh"
               value={formatNumber(data.manga.mangaCount)}
-              hint="Số bộ đã nhập vào MongoDB catalog."
+              hint="Tổng số bộ duy nhất đang có trong MongoDB; đã loại trừ các lần cập nhật lặp."
               icon={Database}
             />
             <StatCard
-              label="Manifest chapter"
+              label="Mục lục nguồn"
               value={formatNumber(data.manga.chapterManifests)}
-              hint="Chapter đã lập danh sách ảnh; không đồng nghĩa mọi ảnh đã tải."
+              hint="Số cặp truyện–nguồn đã lưu danh sách chapter và đường dẫn nguồn; chưa chứa ảnh."
               icon={BookOpen}
             />
             <StatCard
@@ -386,7 +433,9 @@ export function CyberNexusDashboard() {
               <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
                 <div>
                   <h2 className="font-bold text-white">Tiến trình crawler truyện tranh</h2>
-                  <p className="mt-1 text-xs text-slate-500">Cursor là trang nguồn tiếp theo sẽ được quét.</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    “Tạo mới” và “cập nhật” là số lượt tích lũy qua nhiều vòng quét, không phải tổng số bộ duy nhất.
+                  </p>
                 </div>
                 <Database className="h-5 w-5 text-cyan-400" aria-hidden="true" />
               </div>
@@ -396,8 +445,8 @@ export function CyberNexusDashboard() {
                     <tr>
                       <th className="px-5 py-3">Nguồn</th>
                       <th className="px-5 py-3">Trang cursor</th>
-                      <th className="px-5 py-3">Đã nhập</th>
-                      <th className="px-5 py-3">Đã cập nhật</th>
+                      <th className="px-5 py-3">Tạo mới (lượt)</th>
+                      <th className="px-5 py-3">Cập nhật (lượt)</th>
                       <th className="px-5 py-3">Lần chạy cuối</th>
                       <th className="px-5 py-3">Trạng thái</th>
                     </tr>
@@ -416,6 +465,18 @@ export function CyberNexusDashboard() {
                             <span className={`inline-flex rounded-md border px-2 py-1 ${statusTone(healthy)}`}>
                               {source.completedRound ? "Đã hết một vòng" : healthy ? "Đang đồng bộ" : "Có lỗi"}
                             </span>
+                            <CrawlProgress
+                              label="Quét danh mục"
+                              completed={Boolean(source.completedRound)}
+                              detail={`Trang ${formatNumber(source.cursorPage)}`}
+                              error={!healthy}
+                            />
+                            <CrawlProgress
+                              label="Lấy danh sách chapter"
+                              completed={Boolean(source.manifestCompletedRound)}
+                              detail={`${formatNumber(source.manifestUpdated)} chapter`}
+                              error={Boolean(source.manifestLastError)}
+                            />
                             {source.lastError ? <p className="mt-2 max-w-xs text-rose-300">{source.lastError}</p> : null}
                           </td>
                         </tr>
@@ -477,6 +538,12 @@ export function CyberNexusDashboard() {
                       <span>Độ trễ</span><span className="text-right text-slate-300">{source.latency_ewma_ms ?? "—"} ms</span>
                       <span>Thành công / lỗi</span><span className="text-right text-slate-300">{source.successes} / {source.failures}</span>
                     </div>
+                    <CrawlProgress
+                      label="Tiến trình catalog"
+                      completed={Boolean(progress?.completed)}
+                      detail={progress ? `${formatNumber(progress.pages_crawled)} trang` : "Chưa chạy"}
+                      error={Boolean(progress?.last_error)}
+                    />
                     {progress?.last_error ? (
                       <p className="mt-3 rounded-lg border border-rose-500/20 bg-rose-500/5 p-2 text-[11px] leading-5 text-rose-300">
                         {progress.last_error}

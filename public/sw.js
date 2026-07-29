@@ -1,8 +1,9 @@
-const STATIC_CACHE = "muc-static-v3";
-const PAGE_CACHE = "muc-pages-v3";
-const CHAPTER_CACHE = "muc-chapters-v3";
+const STATIC_CACHE = "muc-static-v5";
+const PAGE_CACHE = "muc-pages-v5";
+const CHAPTER_CACHE = "muc-chapters-v5";
 const READING_CACHE = "muc-reading-v1";
 const APP_SHELL = ["/", "/discover", "/library", "/downloads", "/offline", "/offline-reader.html", "/offline-text-reader.html", "/manifest.webmanifest"];
+const readerAssetFlights = new Map();
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
@@ -42,18 +43,75 @@ async function staleWhileRevalidate(request) {
   return cached || fresh;
 }
 
+async function networkFirstAsset(request) {
+  const cache = await caches.open(STATIC_CACHE);
+  try {
+    const response = await fetch(request, { cache: "no-cache" });
+    if (response.ok) await cache.put(request, response.clone());
+    return response;
+  } catch {
+    return (await cache.match(request)) || new Response("Asset unavailable", { status: 503 });
+  }
+}
+
+function stableReaderCacheKey(request) {
+  const url = new URL(request.url);
+  const signedProxy = url.pathname === "/api/v1/image-proxy";
+  const cachedImage = url.pathname.startsWith("/api/v1/cached-image/");
+  if (signedProxy || cachedImage) {
+    url.searchParams.delete("expires");
+    url.searchParams.delete("sig");
+    url.searchParams.delete("retry");
+    return new Request(url.href, { method: "GET" });
+  }
+  return request;
+}
+
+async function fetchReaderAsset(request, event) {
+  const [pinnedCache, readingCache] = await Promise.all([
+    caches.open(CHAPTER_CACHE),
+    caches.open(READING_CACHE),
+  ]);
+  const cacheKey = stableReaderCacheKey(request);
+  const cached = (await pinnedCache.match(cacheKey)) || (await readingCache.match(cacheKey));
+  if (cached) return cached;
+
+  const flightKey = cacheKey.url;
+  let pending = readerAssetFlights.get(flightKey);
+  if (!pending) {
+    pending = (async () => {
+      let response;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          response = await fetch(request);
+          if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break;
+        } catch (error) {
+          if (attempt === 2) throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
+      }
+      return response;
+    })().finally(() => readerAssetFlights.delete(flightKey));
+    readerAssetFlights.set(flightKey, pending);
+  }
+  const response = await pending;
+  if (response && (response.ok || response.type === "opaque")) {
+    event.waitUntil(readingCache.put(cacheKey, response.clone()).catch(() => undefined));
+  }
+  return response ? response.clone() : new Response("Image unavailable", { status: 503 });
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
 
   if (url.origin !== self.location.origin) {
-    event.respondWith(Promise.all([caches.open(CHAPTER_CACHE), caches.open(READING_CACHE)]).then(async ([pinnedCache, readingCache]) =>
-      (await pinnedCache.match(request)) || (await readingCache.match(request)) || fetch(request),
-    ));
+    event.respondWith(fetchReaderAsset(request, event));
     return;
   }
-  if (request.mode === "navigate") event.respondWith(networkFirst(request));
+  if (url.pathname.includes("/assets/CyberNexusDashboard-")) event.respondWith(networkFirstAsset(request));
+  else if (request.mode === "navigate") event.respondWith(networkFirst(request));
   else if (url.pathname.startsWith("/assets/") || url.pathname.endsWith(".css") || url.pathname.endsWith(".js") || url.pathname.endsWith(".woff2")) event.respondWith(staleWhileRevalidate(request));
 });
 

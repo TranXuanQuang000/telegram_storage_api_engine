@@ -28,7 +28,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cha
   return NextResponse.json(
     { chapterId, chapterName: chapter.chapterName, version: `manga-api-${chapter.chapterName}-${chapter.pages.length}`, estimatedBytes: chapter.pages.length * 420_000, pages: chapter.pages, sourceUrl: chapter.sourceUrl },
     { headers: {
-      "Cache-Control": "private, no-store",
+      "Cache-Control": "private, max-age=45, stale-while-revalidate=120",
     } },
   );
 }
