@@ -56,9 +56,8 @@ async function fetchWithRetry(target: URL) {
   let response: Response | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      response = await fetch(target, {
+      response = await fetch(target.toString(), {
         headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif" },
-        redirect: "error",
       });
       if (!TRANSIENT_STATUSES.has(response.status) || attempt === 1) return response;
       await response.body?.cancel().catch(() => undefined);
@@ -113,7 +112,13 @@ export async function GET(request: Request) {
   let upstream: Response | null;
   try {
     upstream = await fetchWithRetry(target);
-  } catch {
+  } catch (error) {
+    console.error("manga_edge_fetch_failed", {
+      name: error instanceof Error ? error.name : "UnknownError",
+      message: error instanceof Error ? error.message : String(error),
+      targetOrigin: target.origin,
+      targetPath: target.pathname,
+    });
     return errorResponse("Không kết nối được máy chủ ảnh", 503);
   }
   if (!upstream?.ok) {
@@ -128,7 +133,6 @@ export async function GET(request: Request) {
 
   const response = imageResponse(upstream, ttlSeconds, "MISS");
   const cacheCopy = response.clone();
-  cacheCopy.headers.set("X-Muc-Edge-Cache", "HIT");
   waitUntil(edgeCache.put(cacheKey, cacheCopy).catch(() => undefined));
   return response;
 }
