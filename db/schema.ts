@@ -93,6 +93,13 @@ export const chapters = sqliteTable("chapters", {
   index("chapters_source_item_number_idx").on(table.sourceItemId, table.number),
 ]);
 
+export const chapterPages = sqliteTable("chapter_pages", {
+  chapterId: text("chapter_id").notNull().references(() => chapters.id, { onDelete: "cascade" }),
+  pageIndex: integer("page_index").notNull(),
+  imageUrl: text("image_url").notNull(),
+  fetchedAt: text("fetched_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [primaryKey({ columns: [table.chapterId, table.pageIndex] })]);
+
 export const ratingSnapshots = sqliteTable("rating_snapshots", {
   id: text("id").primaryKey(),
   storyId: text("story_id").notNull().references(() => stories.id, { onDelete: "cascade" }),

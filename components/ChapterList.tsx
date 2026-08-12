@@ -140,7 +140,7 @@ export function ChapterList({
                   <strong style={{ marginRight: "0.5rem" }}>Chương {chapter.number}</strong>
                   <small style={{ flex: 1, paddingRight: "0.5rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {chapter.source && chapter.source !== "otruyen"
-                      ? `Mở tại ${chapter.source === "truyenqq" ? "TruyenQQ" : "NetTruyen"}`
+                      ? `${chapter.source === "truyenqq" ? "TruyenQQ" : "NetTruyen"} · đọc tại Mực`
                       : chapter.title || "Đọc ngay"}
                   </small>
                 </Link>

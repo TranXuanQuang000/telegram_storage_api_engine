@@ -62,6 +62,26 @@ test("fallback URL validation rejects open-proxy and cross-story targets", () =>
   assert.equal(module.validateFallbackChapterUrl("nettruyen", "https://nettruyenz.com/de-vuong-hoi-quy/chap-136"), "https://nettruyenz.com/de-vuong-hoi-quy/chap-136");
 });
 
+test("fallback image manifests allow only source CDNs and use chapter-bound proxy paths", () => {
+  const module = loadModule();
+  const qqChapter = "https://truyenqq.com.vn/de-vuong-hoi-quy/chapter-146";
+  const netChapter = "https://nettruyenz.com/de-vuong-hoi-quy/chap-136";
+  assert.equal(
+    module.validateFallbackImageUrl("truyenqq", "https://s35.cc3t.net/chapters/story/page-0.jpg", qqChapter),
+    "https://s35.cc3t.net/chapters/story/page-0.jpg",
+  );
+  assert.equal(
+    module.validateFallbackImageUrl("nettruyen", "https://sv1.otruyencdn.com/uploads/story/page_0.webp", netChapter),
+    "https://sv1.otruyencdn.com/uploads/story/page_0.webp",
+  );
+  assert.equal(module.validateFallbackImageUrl("truyenqq", "https://attacker.example/page.jpg", qqChapter), null);
+  assert.equal(module.validateFallbackImageUrl("truyenqq", "/images/loading.svg", qqChapter), null);
+  assert.equal(module.validateFallbackImageUrl("truyenqq", "https://s35.cc3t.net/page.jpg", netChapter), null);
+  const chapterId = `fb_${"a".repeat(40)}`;
+  assert.equal(module.fallbackImageProxyUrl(chapterId, 7), `/api/chapter-image/${chapterId}/7`);
+  assert.equal(module.fallbackImageProxyUrl(chapterId, -1), null);
+});
+
 test("production runtime no longer contains Raspberry Pi serving variables", () => {
   const wrangler = fs.readFileSync(new URL("../wrangler.json", import.meta.url), "utf8");
   assert.doesNotMatch(wrangler, /raspberrypi|MANGA_API_BASE_URL|CATALOG_PROVIDER/i);

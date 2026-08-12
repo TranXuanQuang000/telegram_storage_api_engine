@@ -21,6 +21,7 @@ type FallbackSourceConfig = {
   catalogItemSelector: string;
   catalogLinkSelector: string;
   chapterLinkSelector: string;
+  pageImageSelector: string;
   storySlug(url: URL): string | null;
   chapterStorySlug(url: URL): string | null;
   chapterPathPattern: RegExp;
@@ -38,6 +39,7 @@ export const FALLBACK_SOURCES: Record<FallbackSourceKey, FallbackSourceConfig> =
     catalogItemSelector: ".items-row > .item",
     catalogLinkSelector: "figcaption h3 a",
     chapterLinkSelector: ".chapter-table tbody tr td a",
+    pageImageSelector: ".reader-pages img",
     storySlug(url) {
       const match = url.pathname.match(/^\/comic-([a-z0-9-]+)\/?$/i);
       return match?.[1]?.toLowerCase() ?? null;
@@ -59,6 +61,7 @@ export const FALLBACK_SOURCES: Record<FallbackSourceKey, FallbackSourceConfig> =
     catalogItemSelector: ".listing .inner > .item",
     catalogLinkSelector: ".info h3 a",
     chapterLinkSelector: "#chapter-list .reading-list .item .chapter-name",
+    pageImageSelector: ".reading-content img",
     storySlug(url) {
       const match = url.pathname.match(/^\/([a-z0-9-]+)\/?$/i);
       return match?.[1]?.toLowerCase() ?? null;
@@ -73,9 +76,15 @@ export const FALLBACK_SOURCES: Record<FallbackSourceKey, FallbackSourceConfig> =
 
 type CatalogItem = { title: string; storyUrl: string; storySlug: string };
 type ExtractedChapter = { number: string; url: string };
+type StoredChapterPage = { page_index: number; image_url: string };
 
 const SOURCE_PRIORITY: Record<string, number> = { oTruyen: 0, otruyen: 0, truyenqq: 1, nettruyen: 2 };
 const BLOCK_MARKERS = ["cf-chl-", "captcha", "verify you are human", "attention required", "access denied"];
+const IMAGE_HOST_SUFFIXES: Record<FallbackSourceKey, readonly string[]> = {
+  nettruyen: ["otruyencdn.com", "otruyenapi.com", "nettruyenz.com"],
+  truyenqq: ["cc3t.net", "truyenqq.com.vn"],
+};
+const IMAGE_PATH_PATTERN = /\.(?:avif|gif|jpe?g|png|webp)$/i;
 
 function decodeHtml(value: string) {
   const named: Record<string, string> = { amp: "&", apos: "'", gt: ">", lt: "<", nbsp: " ", quot: "\"" };
@@ -118,6 +127,32 @@ export function validateFallbackChapterUrl(source: FallbackSourceKey, rawUrl: st
   const chapterStorySlug = config.chapterStorySlug(url);
   if (!chapterStorySlug || (expectedStorySlug && chapterStorySlug !== expectedStorySlug.toLowerCase())) return null;
   return url.toString();
+}
+
+function hostnameMatchesSuffix(hostname: string, suffix: string) {
+  return hostname === suffix || hostname.endsWith(`.${suffix}`);
+}
+
+export function validateFallbackImageUrl(source: FallbackSourceKey, rawUrl: string, chapterUrl?: string) {
+  const config = FALLBACK_SOURCES[source];
+  const validatedChapterUrl = chapterUrl ? validateFallbackChapterUrl(source, chapterUrl) : null;
+  if (chapterUrl && !validatedChapterUrl) return null;
+  try {
+    const url = new URL(rawUrl, validatedChapterUrl ?? config.baseUrl);
+    if (url.protocol !== "https:" || url.port || url.username || url.password) return null;
+    const hostname = url.hostname.toLowerCase();
+    if (!IMAGE_HOST_SUFFIXES[source].some((suffix) => hostnameMatchesSuffix(hostname, suffix))) return null;
+    if (!IMAGE_PATH_PATTERN.test(url.pathname)) return null;
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function fallbackImageProxyUrl(chapterId: string, pageIndex: number) {
+  if (!/^fb_[a-f0-9]{40}$/i.test(chapterId) || !Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex > 999) return null;
+  return `/api/chapter-image/${chapterId}/${pageIndex}`;
 }
 
 export function mergeChapterPlans(primary: ChapterPlanItem[], fallback: ChapterPlanItem[]) {
@@ -231,6 +266,24 @@ async function extractChapterManifest(html: string, config: FallbackSourceConfig
     .sort((left, right) => (Number.parseFloat(right.number) || 0) - (Number.parseFloat(left.number) || 0));
 }
 
+async function extractChapterImages(html: string, config: FallbackSourceConfig, chapterUrl: string): Promise<string[]> {
+  const images: string[] = [];
+  const rewriter = new HTMLRewriter().on(config.pageImageSelector, {
+    element(element) {
+      if (images.length >= 1_000) return;
+      const raw = element.getAttribute("data-src")
+        ?? element.getAttribute("data-original")
+        ?? element.getAttribute("data-cdn")
+        ?? element.getAttribute("src")
+        ?? "";
+      const imageUrl = validateFallbackImageUrl(config.key, raw, chapterUrl);
+      if (imageUrl) images.push(imageUrl);
+    },
+  });
+  await rewriter.transform(new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } })).text();
+  return [...new Set(images)];
+}
+
 async function batchInChunks(db: D1Database, statements: D1PreparedStatement[]) {
   for (let index = 0; index < statements.length; index += 50) await db.batch(statements.slice(index, index + 50));
 }
@@ -245,7 +298,7 @@ async function registerSource(db: D1Database, config: FallbackSourceConfig) {
     config.key,
     config.name,
     config.baseUrl,
-    "Search/reference metadata and verified source chapter links only; media remains on the source page",
+    "Source-attributed chapter and image URL manifests; media bytes remain upstream and are fetched only for validated chapters",
   ).run();
 }
 
@@ -355,7 +408,19 @@ async function refreshSourceItem(
   if (!storyUrl || !storySlug || storySlug !== sourceItem.external_id) throw new Error(`FALLBACK_STORY_URL_INVALID:${config.key}`);
   const chapters = await extractChapterManifest(await fetchHtml(storyUrl.toString(), config), config, storySlug);
   if (!chapters.length) throw new Error(`FALLBACK_EMPTY_MANIFEST:${config.key}:${storySlug}`);
-  return { chapters: chapters.length, inserted: await persistFallbackManifest(db, config, sourceItem, chapters) };
+  const inserted = await persistFallbackManifest(db, config, sourceItem, chapters);
+  const newest = chapters[0];
+  let imagePages = 0;
+  if (newest) {
+    const newestId = await stableId("fb", `${config.key}:${new URL(newest.url).pathname}`);
+    try {
+      const manifest = await getFallbackChapterPages(db, newestId);
+      imagePages = manifest?.pages.length ?? 0;
+    } catch {
+      // The chapter list remains usable and the reader retries this manifest on demand.
+    }
+  }
+  return { chapters: chapters.length, inserted, imagePages };
 }
 
 export async function refreshFallbackManifests(db: D1Database, source: FallbackSourceKey, requestedLimit = 6) {
@@ -457,14 +522,87 @@ export async function getFallbackChaptersForStory(db: D1Database, storyId: strin
 export async function getFallbackChapterTarget(db: D1Database, chapterId: string) {
   if (!/^fb_[a-f0-9]{40}$/i.test(chapterId)) return null;
   const row = await db.prepare(`
-    SELECT c.external_url, c.number, c.story_id, src.slug AS source_slug
+    SELECT c.external_url, c.number, c.story_id, c.page_count, src.slug AS source_slug
     FROM chapters c
     JOIN source_items si ON si.id = c.source_item_id
     JOIN sources src ON src.id = si.source_id
     WHERE c.id = ? AND src.slug IN ('truyenqq', 'nettruyen') AND src.enabled = 1
     LIMIT 1
-  `).bind(chapterId).first<{ external_url: string; number: number; story_id: string; source_slug: FallbackSourceKey }>();
+  `).bind(chapterId).first<{ external_url: string; number: number; story_id: string; page_count: number; source_slug: FallbackSourceKey }>();
   if (!row) return null;
   const url = validateFallbackChapterUrl(row.source_slug, row.external_url);
-  return url ? { url, number: canonicalChapterKey(row.number) ?? String(row.number), storyId: row.story_id, source: row.source_slug } : null;
+  return url ? {
+    url,
+    number: canonicalChapterKey(row.number) ?? String(row.number),
+    storyId: row.story_id,
+    pageCount: Number(row.page_count) || 0,
+    source: row.source_slug,
+  } : null;
+}
+
+async function persistFallbackChapterPages(db: D1Database, chapterId: string, images: string[]) {
+  const statements = images.map((imageUrl, pageIndex) => db.prepare(`
+    INSERT INTO chapter_pages (chapter_id, page_index, image_url, fetched_at)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(chapter_id, page_index) DO UPDATE SET image_url = excluded.image_url, fetched_at = CURRENT_TIMESTAMP
+  `).bind(chapterId, pageIndex, imageUrl));
+  await batchInChunks(db, statements);
+  await db.batch([
+    db.prepare("DELETE FROM chapter_pages WHERE chapter_id = ? AND page_index >= ?").bind(chapterId, images.length),
+    db.prepare("UPDATE chapters SET page_count = ? WHERE id = ?").bind(images.length, chapterId),
+  ]);
+}
+
+export async function getFallbackChapterPages(db: D1Database, chapterId: string) {
+  const target = await getFallbackChapterTarget(db, chapterId);
+  if (!target) return null;
+  const cachedRows = await db.prepare(`
+    SELECT page_index, image_url
+    FROM chapter_pages
+    WHERE chapter_id = ?
+    ORDER BY page_index ASC
+  `).bind(chapterId).all<StoredChapterPage>();
+  const cached = (cachedRows.results ?? []).flatMap((row, expectedIndex) => {
+    if (row.page_index !== expectedIndex) return [];
+    const imageUrl = validateFallbackImageUrl(target.source, row.image_url, target.url);
+    return imageUrl ? [imageUrl] : [];
+  });
+  let images = cached.length === (cachedRows.results ?? []).length ? cached : [];
+  if (!images.length || (target.pageCount > 0 && images.length !== target.pageCount)) {
+    images = await extractChapterImages(
+      await fetchHtml(target.url, FALLBACK_SOURCES[target.source]),
+      FALLBACK_SOURCES[target.source],
+      target.url,
+    );
+    if (!images.length) throw new Error(`FALLBACK_EMPTY_IMAGE_MANIFEST:${target.source}:${chapterId}`);
+    await persistFallbackChapterPages(db, chapterId, images);
+  } else if (target.pageCount !== images.length) {
+    await db.prepare("UPDATE chapters SET page_count = ? WHERE id = ?").bind(images.length, chapterId).run();
+  }
+  const pages = images.map((_image, pageIndex) => fallbackImageProxyUrl(chapterId, pageIndex)).filter((url): url is string => Boolean(url));
+  return {
+    chapterId,
+    chapterName: target.number,
+    pages,
+    sourceUrl: target.url,
+    source: target.source,
+  };
+}
+
+export async function getFallbackChapterImageTarget(db: D1Database, chapterId: string, pageIndex: number) {
+  if (!/^fb_[a-f0-9]{40}$/i.test(chapterId) || !Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex > 999) return null;
+  const row = await db.prepare(`
+    SELECT cp.image_url, c.external_url, src.slug AS source_slug
+    FROM chapter_pages cp
+    JOIN chapters c ON c.id = cp.chapter_id
+    JOIN source_items si ON si.id = c.source_item_id
+    JOIN sources src ON src.id = si.source_id
+    WHERE cp.chapter_id = ? AND cp.page_index = ?
+      AND src.slug IN ('truyenqq', 'nettruyen') AND src.enabled = 1
+    LIMIT 1
+  `).bind(chapterId, pageIndex).first<{ image_url: string; external_url: string; source_slug: FallbackSourceKey }>();
+  if (!row) return null;
+  const referer = validateFallbackChapterUrl(row.source_slug, row.external_url);
+  const imageUrl = referer ? validateFallbackImageUrl(row.source_slug, row.image_url, referer) : null;
+  return imageUrl && referer ? { imageUrl, referer, source: row.source_slug } : null;
 }

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getChapterPages } from "../../../../lib/catalog";
 import { getReaderAccess, type ReaderAccessRuntime } from "../../../../lib/reader-access";
 import { MangaApiError } from "../../../../lib/sources/manga-api";
-import { getFallbackChapterTarget } from "../../../../lib/sources/fallback-chapters";
+import { getFallbackChapterPages } from "../../../../lib/sources/fallback-chapters";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ chapterId: string }> }) {
   const access = await getReaderAccess(env as unknown as ReaderAccessRuntime);
@@ -14,16 +14,23 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cha
     );
   }
   const { chapterId } = await params;
+  const runtime = env as unknown as { DB?: D1Database };
   if (chapterId.startsWith("fb_")) {
-    const runtime = env as unknown as { DB?: D1Database };
-    const fallback = runtime.DB ? await getFallbackChapterTarget(runtime.DB, chapterId) : null;
-    if (!fallback) return NextResponse.json({ error: "Chương dự phòng không khả dụng", code: "CHAPTER_NOT_FOUND", details: null }, { status: 404 });
-    return NextResponse.json({
-      error: "Chương này được đọc tại trang nguồn",
-      code: "EXTERNAL_CHAPTER",
-      externalUrl: fallback.url,
-      source: fallback.source,
-    }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
+    try {
+      const fallback = runtime.DB ? await getFallbackChapterPages(runtime.DB, chapterId) : null;
+      if (!fallback) return NextResponse.json({ error: "Chương dự phòng không khả dụng", code: "CHAPTER_NOT_FOUND", details: null }, { status: 404 });
+      return NextResponse.json({
+        chapterId,
+        chapterName: fallback.chapterName,
+        version: `fallback-images-${fallback.source}-${fallback.chapterName}-${fallback.pages.length}`,
+        estimatedBytes: fallback.pages.length * 520_000,
+        pages: fallback.pages,
+        sourceUrl: fallback.sourceUrl,
+        source: fallback.source,
+      }, { headers: { "Cache-Control": "private, no-store" } });
+    } catch {
+      return NextResponse.json({ error: "Không tải được ảnh chapter dự phòng", code: "FALLBACK_IMAGE_MANIFEST_FAILED", details: null }, { status: 502 });
+    }
   }
   let chapter;
   try {

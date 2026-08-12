@@ -103,8 +103,10 @@ async function readMangaTelemetry(db: D1Database) {
         (SELECT COUNT(*) FROM chapters) AS chapter_count,
         (SELECT COUNT(*) FROM chapters c JOIN source_items si ON si.id = c.source_item_id WHERE si.source_id IN ('source_nettruyen', 'source_truyenqq')) AS fallback_chapters,
         (SELECT COUNT(DISTINCT c.source_item_id) FROM chapters c JOIN source_items si ON si.id = c.source_item_id WHERE si.source_id IN ('source_nettruyen', 'source_truyenqq')) AS chapter_manifests,
+        (SELECT COUNT(DISTINCT chapter_id) FROM chapter_pages) AS image_manifests,
+        (SELECT COUNT(*) FROM chapter_pages) AS fallback_image_pages,
         (SELECT COUNT(*) FROM source_items WHERE source_id IN ('source_nettruyen', 'source_truyenqq') AND last_checked_at IS NULL) AS pending_manifests
-    `).first<{ manga_count: number; chapter_count: number; fallback_chapters: number; chapter_manifests: number; pending_manifests: number }>(),
+    `).first<{ manga_count: number; chapter_count: number; fallback_chapters: number; chapter_manifests: number; image_manifests: number; fallback_image_pages: number; pending_manifests: number }>(),
     db.prepare(`
       SELECT
         src.slug AS source_key,
@@ -133,6 +135,8 @@ async function readMangaTelemetry(db: D1Database) {
     chapterCount: Number(counts?.chapter_count ?? 0),
     fallbackChapters: Number(counts?.fallback_chapters ?? 0),
     chapterManifests: Number(counts?.chapter_manifests ?? 0),
+    imageManifests: Number(counts?.image_manifests ?? 0),
+    fallbackImagePages: Number(counts?.fallback_image_pages ?? 0),
     pendingManifests: Number(counts?.pending_manifests ?? 0),
     syncStates: rows.map((row) => {
       const cursorPage = Number(row.cursor?.match(/(?:page|catalog):(\d+)/)?.[1] ?? 0);

@@ -101,8 +101,8 @@ test("comic catalog and two production stories load without the Raspberry Pi API
   }
   await new Promise((resolve) => setTimeout(resolve, 4_000));
   for (const expected of [
-    { slug: "quy-toc-luoi-bieng-tro-thanh-thien-tai", fallbackLatest: "154", oTruyenLatest: "138", sourcePath: "/quy-toc-luoi-bieng-tro-thanh-thien-tai/chapter-154" },
-    { slug: "de-vuong-hoi-quy", fallbackLatest: "146", oTruyenLatest: "136", sourcePath: "/de-vuong-hoi-quy/chapter-146" },
+    { slug: "quy-toc-luoi-bieng-tro-thanh-thien-tai", fallbackLatest: "154", oTruyenLatest: "138" },
+    { slug: "de-vuong-hoi-quy", fallbackLatest: "146", oTruyenLatest: "136" },
   ]) {
     const enriched = await request(`/api/stories/${expected.slug}`);
     assert.equal(enriched.status, 200);
@@ -111,7 +111,15 @@ test("comic catalog and two production stories load without the Raspberry Pi API
     assert.match(enrichedPayload.chapters[0].id, /^fb_[a-f0-9]{40}$/);
     assert.equal(enrichedPayload.chapters.find((chapter) => chapter.number === expected.oTruyenLatest)?.source, "otruyen");
     const fallbackRead = await request(`/read/${enrichedPayload.chapters[0].id}?story=${expected.slug}`, { redirect: "manual" });
-    assert.ok([307, 308].includes(fallbackRead.status));
-    assert.equal(new URL(fallbackRead.headers.get("location")).pathname, expected.sourcePath);
+    assert.equal(fallbackRead.status, 200);
+    assert.equal(fallbackRead.headers.get("location"), null);
+    const manifest = await request(`/api/download-manifest/${enrichedPayload.chapters[0].id}`);
+    assert.equal(manifest.status, 200);
+    const manifestPayload = await manifest.json();
+    assert.ok(manifestPayload.pages.length > 0);
+    assert.ok(manifestPayload.pages.every((page) => page.startsWith(`/api/chapter-image/${enrichedPayload.chapters[0].id}/`)));
+    const firstImage = await request(manifestPayload.pages[0]);
+    assert.equal(firstImage.status, 200);
+    assert.match(firstImage.headers.get("content-type") ?? "", /^image\//);
   }
 });
