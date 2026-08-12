@@ -358,19 +358,19 @@ export function CyberNexusDashboard() {
             <StatCard
               label="Kho truyện tranh"
               value={formatNumber(data.manga.mangaCount)}
-              hint="Số bộ đã nhập vào MongoDB catalog."
+              hint="Số bộ OTruyen đã lập chỉ mục trong Cloudflare D1."
               icon={Database}
             />
             <StatCard
-              label="Manifest chapter"
+              label="Truyện có chapter plan"
               value={formatNumber(data.manga.chapterManifests)}
-              hint="Chapter đã lập danh sách ảnh; không đồng nghĩa mọi ảnh đã tải."
+              hint="Số truyện đã có path chương dự phòng từ NetTruyen/TruyenQQ."
               icon={BookOpen}
             />
             <StatCard
-              label="Chapter đã cache"
+              label="Chapter đã lập chỉ mục"
               value={formatNumber(data.manga.cachedChapters)}
-              hint="Nội dung chapter đã sẵn sàng trong cache."
+              hint="Tổng chapter OTruyen và path dự phòng đã lưu trong D1."
               icon={HardDrive}
             />
             <StatCard

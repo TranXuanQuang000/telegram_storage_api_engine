@@ -73,7 +73,10 @@ export const sourceItems = sqliteTable("source_items", {
   etag: text("etag"),
   sourceUpdatedAt: text("source_updated_at"),
   lastCheckedAt: text("last_checked_at"),
-}, (table) => [uniqueIndex("source_items_external_idx").on(table.sourceId, table.externalId)]);
+}, (table) => [
+  uniqueIndex("source_items_external_idx").on(table.sourceId, table.externalId),
+  index("source_items_story_source_idx").on(table.storyId, table.sourceId),
+]);
 
 export const chapters = sqliteTable("chapters", {
   id: text("id").primaryKey(),
@@ -85,7 +88,10 @@ export const chapters = sqliteTable("chapters", {
   pageCount: integer("page_count").notNull().default(0),
   publishedAt: text("published_at"),
   externalUrl: text("external_url").notNull(),
-}, (table) => [index("chapters_story_number_idx").on(table.storyId, table.number)]);
+}, (table) => [
+  index("chapters_story_number_idx").on(table.storyId, table.number),
+  index("chapters_source_item_number_idx").on(table.sourceItemId, table.number),
+]);
 
 export const ratingSnapshots = sqliteTable("rating_snapshots", {
   id: text("id").primaryKey(),
@@ -141,5 +147,5 @@ export const syncRuns = sqliteTable("sync_runs", {
   startedAt: text("started_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   finishedAt: text("finished_at"),
   errorSummary: text("error_summary"),
-});
+}, (table) => [index("sync_runs_source_status_finished_idx").on(table.sourceId, table.status, table.finishedAt)]);
 

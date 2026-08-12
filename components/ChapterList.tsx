@@ -9,6 +9,7 @@ export type ChapterItem = {
   id: string;
   number: string;
   title: string;
+  source?: "otruyen" | "nettruyen" | "truyenqq";
   consent_status?: string;
   domain?: string;
 };
@@ -138,14 +139,16 @@ export function ChapterList({
                 >
                   <strong style={{ marginRight: "0.5rem" }}>Chương {chapter.number}</strong>
                   <small style={{ flex: 1, paddingRight: "0.5rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {chapter.title || "Đọc ngay"}
+                    {chapter.source && chapter.source !== "otruyen"
+                      ? `Mở tại ${chapter.source === "truyenqq" ? "TruyenQQ" : "NetTruyen"}`
+                      : chapter.title || "Đọc ngay"}
                   </small>
                 </Link>
 
                 {/* Consent Badge Trigger */}
                 <ConsentBadge
-                  status={chapter.consent_status || "VERIFIED"}
-                  domain={chapter.domain || "manga-api"}
+                  status={chapter.consent_status || (chapter.source && chapter.source !== "otruyen" ? "UNKNOWN" : "VERIFIED")}
+                  domain={chapter.domain || "otruyenapi.com"}
                   chapterTitle={`Chương ${chapter.number}: ${chapter.title || "Nội dung"}`}
                   storyTitle={storyTitle}
                   size="sm"

@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { getFilteredDiscoverCatalog } from "../../../lib/catalog";
 import { getD1DiscoverCatalog } from "../../../lib/d1-catalog";
-import { isMangaApiCatalogProvider, MangaApiError } from "../../../lib/sources/manga-api";
+import { MangaApiError } from "../../../lib/sources/manga-api";
 
 export async function GET(request: NextRequest) {
   const query = (request.nextUrl.searchParams.get("q") ?? "").slice(0, 120);
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     scanPages,
   };
   const runtime = env as unknown as { DB?: D1Database };
-  const indexedCatalog = runtime.DB && !isMangaApiCatalogProvider()
+  const indexedCatalog = runtime.DB
     ? await getD1DiscoverCatalog(runtime.DB, filters).catch(() => null)
     : null;
   try {

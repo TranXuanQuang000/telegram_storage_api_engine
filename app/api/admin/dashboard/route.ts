@@ -3,15 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { sameSecret } from "../../../../lib/admin-auth";
 
 type RuntimeEnv = {
+  DB?: D1Database;
   ADMIN_DASHBOARD_TOKEN?: string;
   INGEST_TOKEN?: string;
-  MANGA_API_ADMIN_TOKEN?: string;
-  MANGA_API_BASE_URL?: string;
   MUC_CONTENT_API_TOKEN?: string;
   MUC_CONTENT_API_URL?: string;
 };
 
-const REQUEST_TIMEOUT_MS = 12_000;
+const REQUEST_TIMEOUT_MS = 8_000;
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -22,10 +21,9 @@ function asRecord(value: unknown): Record<string, unknown> {
 function runtimeEnv(): RuntimeEnv {
   const workerEnv = env as unknown as RuntimeEnv;
   return {
+    DB: workerEnv.DB,
     ADMIN_DASHBOARD_TOKEN: workerEnv.ADMIN_DASHBOARD_TOKEN ?? process.env.ADMIN_DASHBOARD_TOKEN,
     INGEST_TOKEN: workerEnv.INGEST_TOKEN ?? process.env.INGEST_TOKEN,
-    MANGA_API_ADMIN_TOKEN: workerEnv.MANGA_API_ADMIN_TOKEN ?? process.env.MANGA_API_ADMIN_TOKEN,
-    MANGA_API_BASE_URL: workerEnv.MANGA_API_BASE_URL ?? process.env.MANGA_API_BASE_URL,
     MUC_CONTENT_API_TOKEN: workerEnv.MUC_CONTENT_API_TOKEN ?? process.env.MUC_CONTENT_API_TOKEN,
     MUC_CONTENT_API_URL: workerEnv.MUC_CONTENT_API_URL ?? process.env.MUC_CONTENT_API_URL,
   };
@@ -63,20 +61,11 @@ async function fetchJson(url: URL, headers: HeadersInit = {}) {
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const startedAt = Date.now();
   try {
-    const response = await fetch(url, {
-      headers,
-      cache: "no-store",
-      signal: controller.signal,
-    });
+    const response = await fetch(url, { headers, cache: "no-store", signal: controller.signal });
     const latencyMs = Date.now() - startedAt;
     const body = asRecord(await response.json().catch(() => null));
     if (!response.ok) {
-      return {
-        ok: false as const,
-        latencyMs,
-        statusCode: response.status,
-        error: typeof body.message === "string" ? body.message : `HTTP ${response.status}`,
-      };
+      return { ok: false as const, latencyMs, statusCode: response.status, error: typeof body.message === "string" ? body.message : `HTTP ${response.status}` };
     }
     return { ok: true as const, latencyMs, statusCode: response.status, body };
   } catch (error) {
@@ -84,13 +73,86 @@ async function fetchJson(url: URL, headers: HeadersInit = {}) {
       ok: false as const,
       latencyMs: Date.now() - startedAt,
       statusCode: 0,
-      error: error instanceof Error && error.name === "AbortError"
-        ? "Hết thời gian chờ"
-        : "Không kết nối được",
+      error: error instanceof Error && error.name === "AbortError" ? "Hết thời gian chờ" : "Không kết nối được",
     };
   } finally {
     clearTimeout(timer);
   }
+}
+
+type SourceTelemetryRow = {
+  source_key: string;
+  last_sync_at: string | null;
+  cursor: string | null;
+  imported: number;
+  updated: number;
+  failed: number;
+  last_run_at: string | null;
+  last_error: string | null;
+  item_count: number;
+  chapter_count: number;
+  pending_manifests: number;
+};
+
+async function readMangaTelemetry(db: D1Database) {
+  const startedAt = Date.now();
+  const [counts, sourceRows] = await Promise.all([
+    db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM stories WHERE medium = 'comic') AS manga_count,
+        (SELECT COUNT(*) FROM chapters) AS chapter_count,
+        (SELECT COUNT(*) FROM chapters c JOIN source_items si ON si.id = c.source_item_id WHERE si.source_id IN ('source_nettruyen', 'source_truyenqq')) AS fallback_chapters,
+        (SELECT COUNT(DISTINCT c.source_item_id) FROM chapters c JOIN source_items si ON si.id = c.source_item_id WHERE si.source_id IN ('source_nettruyen', 'source_truyenqq')) AS chapter_manifests,
+        (SELECT COUNT(*) FROM source_items WHERE source_id IN ('source_nettruyen', 'source_truyenqq') AND last_checked_at IS NULL) AS pending_manifests
+    `).first<{ manga_count: number; chapter_count: number; fallback_chapters: number; chapter_manifests: number; pending_manifests: number }>(),
+    db.prepare(`
+      SELECT
+        src.slug AS source_key,
+        src.last_sync_at,
+        run.cursor,
+        COALESCE(run.imported, 0) AS imported,
+        COALESCE(run.updated, 0) AS updated,
+        COALESCE(run.failed, 0) AS failed,
+        run.finished_at AS last_run_at,
+        run.error_summary AS last_error,
+        (SELECT COUNT(*) FROM source_items si WHERE si.source_id = src.id) AS item_count,
+        (SELECT COUNT(*) FROM chapters c JOIN source_items si ON si.id = c.source_item_id WHERE si.source_id = src.id) AS chapter_count,
+        (SELECT COUNT(*) FROM source_items si WHERE si.source_id = src.id AND si.last_checked_at IS NULL) AS pending_manifests
+      FROM sources src
+      LEFT JOIN sync_runs run ON run.id = (
+        SELECT id FROM sync_runs WHERE source_id = src.id ORDER BY COALESCE(finished_at, started_at) DESC LIMIT 1
+      )
+      WHERE src.id IN ('source_otruyen', 'source_nettruyen', 'source_truyenqq')
+      ORDER BY CASE src.id WHEN 'source_otruyen' THEN 0 WHEN 'source_truyenqq' THEN 1 ELSE 2 END
+    `).all<SourceTelemetryRow>(),
+  ]);
+  const rows = sourceRows.results ?? [];
+  return {
+    latencyMs: Date.now() - startedAt,
+    mangaCount: Number(counts?.manga_count ?? 0),
+    chapterCount: Number(counts?.chapter_count ?? 0),
+    fallbackChapters: Number(counts?.fallback_chapters ?? 0),
+    chapterManifests: Number(counts?.chapter_manifests ?? 0),
+    pendingManifests: Number(counts?.pending_manifests ?? 0),
+    syncStates: rows.map((row) => {
+      const cursorPage = Number(row.cursor?.match(/(?:page|catalog):(\d+)/)?.[1] ?? 0);
+      return {
+        _id: `source_${row.source_key}`,
+        sourceKey: row.source_key,
+        cursorPage,
+        completedRound: cursorPage === 1,
+        imported: Number(row.item_count ?? row.imported ?? 0),
+        updated: Number(row.chapter_count ?? row.updated ?? 0),
+        lastError: row.last_error,
+        lastRunAt: row.last_run_at ?? row.last_sync_at,
+        manifestCompletedRound: Number(row.pending_manifests ?? 0) === 0,
+        manifestUpdated: Number(row.chapter_count ?? 0),
+        manifestFailed: Number(row.failed ?? 0),
+        manifestLastRunAt: row.last_run_at,
+        manifestLastError: row.last_error,
+      };
+    }),
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -102,7 +164,6 @@ export async function GET(request: NextRequest) {
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
-
   const supplied = request.headers.get("x-admin-token")?.trim() ?? "";
   if (!supplied || !(await sameSecret(supplied, dashboardSecret))) {
     return NextResponse.json(
@@ -111,44 +172,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const mangaBase = normalizeOrigin(runtime.MANGA_API_BASE_URL, "https://muc-manga-api.onrender.com");
-  mangaBase.pathname = "/";
-  mangaBase.search = "";
-  const novelBase = normalizeOrigin(
-    runtime.MUC_CONTENT_API_URL,
-    "https://telegram-storage-api-engine.onrender.com/v1/api",
-  );
-  const mangaAdminToken = runtime.MANGA_API_ADMIN_TOKEN?.trim() ?? "";
+  const novelBase = normalizeOrigin(runtime.MUC_CONTENT_API_URL, "https://telegram-storage-api-engine.onrender.com/v1/api");
   const novelToken = runtime.MUC_CONTENT_API_TOKEN?.trim() ?? "";
-
-  const mangaHealthUrl = new URL("/healthz", mangaBase);
-  const mangaStatusUrl = new URL("/api/v1/admin/status", mangaBase);
   const novelHealthUrl = novelEndpoint(novelBase, "health");
   const novelSourcesUrl = novelEndpoint(novelBase, "sources");
-
-  const [mangaHealth, mangaStatus, novelHealth, novelSources] = await Promise.all([
-    fetchJson(mangaHealthUrl),
-    mangaAdminToken
-      ? fetchJson(mangaStatusUrl, { Authorization: `Bearer ${mangaAdminToken}` })
-      : Promise.resolve({
-          ok: false as const,
-          latencyMs: 0,
-          statusCode: 503,
-          error: "Thiếu MANGA_API_ADMIN_TOKEN ở frontend server",
-        }),
+  const [mangaTelemetry, novelHealth, novelSources] = await Promise.all([
+    runtime.DB ? readMangaTelemetry(runtime.DB).catch(() => null) : Promise.resolve(null),
     fetchJson(novelHealthUrl),
-    fetchJson(
-      novelSourcesUrl,
-      novelToken ? { Authorization: `Bearer ${novelToken}` } : {},
-    ),
+    fetchJson(novelSourcesUrl, novelToken ? { Authorization: `Bearer ${novelToken}` } : {}),
   ]);
 
-  const mangaData = mangaStatus.ok ? asRecord(mangaStatus.body.data) : null;
   const novelCapabilities = novelHealth.ok ? asRecord(novelHealth.body.capabilities) : null;
   const novelSourceData = novelSources.ok ? asRecord(novelSources.body.data) : {};
-  const sourceItems = Array.isArray(novelSourceData.items)
-    ? novelSourceData.items
-    : [];
+  const sourceItems = Array.isArray(novelSourceData.items) ? novelSourceData.items : [];
 
   return NextResponse.json({
     status: "success",
@@ -156,45 +192,34 @@ export async function GET(request: NextRequest) {
     services: {
       website: { ok: true, name: "Cloudflare Pages", latencyMs: 0 },
       manga: {
-        ok: mangaHealth.ok,
-        name: "Manga API",
-        latencyMs: mangaHealth.latencyMs,
-        statusCode: mangaHealth.statusCode,
-        database: mangaHealth.ok && typeof mangaHealth.body.database === "string"
-          ? mangaHealth.body.database
-          : "unknown",
-        error: mangaHealth.ok ? null : mangaHealth.error,
+        ok: Boolean(mangaTelemetry),
+        name: "Cloudflare D1 Crawler",
+        latencyMs: mangaTelemetry?.latencyMs ?? 0,
+        statusCode: mangaTelemetry ? 200 : 503,
+        database: mangaTelemetry ? "D1" : "unavailable",
+        error: mangaTelemetry ? null : "D1 telemetry không khả dụng",
       },
       novel: {
         ok: novelHealth.ok,
         name: "Novel API",
         latencyMs: novelHealth.latencyMs,
         statusCode: novelHealth.statusCode,
-        version: novelHealth.ok && typeof novelHealth.body.version === "string"
-          ? novelHealth.body.version
-          : null,
+        version: novelHealth.ok && typeof novelHealth.body.version === "string" ? novelHealth.body.version : null,
         error: novelHealth.ok ? null : novelHealth.error,
       },
     },
-    manga: mangaData
-      ? {
-          available: true,
-          mangaCount: Number(mangaData.mangaCount ?? 0),
-          chapterManifests: Number(mangaData.chapterManifests ?? 0),
-          cachedChapters: Number(mangaData.cachedChapters ?? 0),
-          queue: asRecord(mangaData.queue),
-          syncStates: Array.isArray(mangaData.syncStates) ? mangaData.syncStates : [],
-        }
-      : {
-          available: false,
-          error: mangaStatus.error,
-          statusCode: mangaStatus.statusCode,
-          mangaCount: 0,
-          chapterManifests: 0,
-          cachedChapters: 0,
-          queue: {},
-          syncStates: [],
-        },
+    manga: {
+      available: Boolean(mangaTelemetry),
+      error: mangaTelemetry ? null : "D1 telemetry không khả dụng",
+      mangaCount: mangaTelemetry?.mangaCount ?? 0,
+      chapterManifests: mangaTelemetry?.chapterManifests ?? 0,
+      cachedChapters: mangaTelemetry?.chapterCount ?? 0,
+      queue: {
+        "chapter paths dự phòng": mangaTelemetry?.fallbackChapters ?? 0,
+        "truyện chờ quét manifest": mangaTelemetry?.pendingManifests ?? 0,
+      },
+      syncStates: mangaTelemetry?.syncStates ?? [],
+    },
     novel: {
       available: novelHealth.ok,
       snapshot: novelCapabilities?.novel_catalog_snapshot ?? null,
@@ -209,9 +234,6 @@ export async function GET(request: NextRequest) {
         : null,
     },
   }, {
-    headers: {
-      "Cache-Control": "no-store, private",
-      "X-Content-Type-Options": "nosniff",
-    },
+    headers: { "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" },
   });
 }

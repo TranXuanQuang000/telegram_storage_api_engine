@@ -7,10 +7,8 @@
     "nodejs_compat"
   ],
   "vars": {
-    "MANGA_API_BASE_URL": "https://muc-manga-api.onrender.com",
-    "CATALOG_PROVIDER": "manga-api",
     "MUC_CONTENT_API_URL": "https://telegram-storage-api-engine.onrender.com/v1/api",
-    "MUC_CONTENT_API_STRICT": "true",
+    "MUC_CONTENT_API_STRICT": "false",
     "MUC_NOVEL_API_SOURCES": "hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex",
     "MUC_NOVEL_API_SCAN_PAGES": "3"
   },

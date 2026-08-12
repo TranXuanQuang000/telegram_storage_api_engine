@@ -82,3 +82,36 @@ test("rejects invalid reader and unconfigured AI requests safely", async () => {
   assert.ok([400, 401].includes(ai.status));
   assert.equal(ai.headers.get("cache-control"), "no-store");
 });
+
+test("comic catalog and two production stories load without the Raspberry Pi API", async () => {
+  const catalog = await request("/api/catalog?page=1&limit=3");
+  assert.equal(catalog.status, 200);
+  const catalogPayload = await catalog.json();
+  assert.ok(Array.isArray(catalogPayload.items));
+  assert.ok(catalogPayload.items.length > 0);
+  for (const slug of ["quy-toc-luoi-bieng-tro-thanh-thien-tai", "de-vuong-hoi-quy"]) {
+    const detail = await request(`/api/stories/${slug}`);
+    assert.equal(detail.status, 200, slug);
+    const payload = await detail.json();
+    assert.equal(payload.slug, slug);
+    assert.ok(payload.chapters.length >= 100, slug);
+    assert.doesNotMatch(JSON.stringify(payload), /raspberrypi|MANGA_API_HTTP_502/i);
+    const page = await request(`/story/${slug}`);
+    assert.equal(page.status, 200, slug);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 4_000));
+  for (const expected of [
+    { slug: "quy-toc-luoi-bieng-tro-thanh-thien-tai", fallbackLatest: "154", oTruyenLatest: "138", sourcePath: "/quy-toc-luoi-bieng-tro-thanh-thien-tai/chapter-154" },
+    { slug: "de-vuong-hoi-quy", fallbackLatest: "146", oTruyenLatest: "136", sourcePath: "/de-vuong-hoi-quy/chapter-146" },
+  ]) {
+    const enriched = await request(`/api/stories/${expected.slug}`);
+    assert.equal(enriched.status, 200);
+    const enrichedPayload = await enriched.json();
+    assert.equal(enrichedPayload.chapters[0].number, expected.fallbackLatest);
+    assert.match(enrichedPayload.chapters[0].id, /^fb_[a-f0-9]{40}$/);
+    assert.equal(enrichedPayload.chapters.find((chapter) => chapter.number === expected.oTruyenLatest)?.source, "otruyen");
+    const fallbackRead = await request(`/read/${enrichedPayload.chapters[0].id}?story=${expected.slug}`, { redirect: "manual" });
+    assert.ok([307, 308].includes(fallbackRead.status));
+    assert.equal(new URL(fallbackRead.headers.get("location")).pathname, expected.sourcePath);
+  }
+});

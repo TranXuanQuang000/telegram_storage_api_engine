@@ -6,6 +6,7 @@ import { calculateHotScore, compareHotStories } from "./hot-ranking";
 import { normalizeTitle, titleSimilarity } from "./search-utils";
 import { getMangaDexLatestStories, getMangaDexStory, searchMangaDexStories } from "./sources/mangadex";
 import { comicApiCandidates, contentApiHeaders, contentApiSourceName, getContentApiConfiguration } from "./content-api";
+import { getFallbackChaptersForStory, mergeChapterPlans } from "./sources/fallback-chapters";
 import {
   encodeMangaApiChapterId,
   getMangaApiCatalog,
@@ -80,6 +81,9 @@ export type ChapterData = {
   number: string;
   title: string;
   apiUrl: string;
+  source?: "otruyen" | "nettruyen" | "truyenqq";
+  domain?: string;
+  consent_status?: string;
 };
 
 export type StoryDetailData = StoryCardData & {
@@ -798,7 +802,7 @@ export async function getFilteredDiscoverCatalog({
 
 export async function getStory(
   slug: string,
-  options: { includeExternalRating?: boolean } = {},
+  options: { includeExternalRating?: boolean; db?: D1Database } = {},
 ): Promise<StoryDetailData | null> {
   if (!/^[a-z0-9-]{1,160}$/.test(slug)) return null;
   if (isMangaApiCatalogProvider()) {
@@ -842,7 +846,7 @@ export async function getStory(
     const rating = options.includeExternalRating === false
       ? aggregateRatings([])
       : await getExternalRating([item.name]);
-    return {
+    return await attachFallbackPlan({
       ...summary,
       latestChapter: chapters[0]?.number ?? null,
       latestChapterId: chapters[0]?.id ?? null,
@@ -857,7 +861,7 @@ export async function getStory(
         ? `${rating.isAggregate ? "Tổng hợp" : "Điểm nguồn"} · ${rating.sources.map((source) => source.sourceName).join(" + ")}`
         : summary.scoreSource,
       scoreKind: rating.score5 ? "community" : summary.scoreKind,
-    };
+    }, options.db);
   }
   if (slug.startsWith("mangadex-")) return await getMangaDexStory(slug);
   try {
@@ -890,7 +894,7 @@ export async function getStory(
         || right.number.localeCompare(left.number, "vi", { numeric: true })
       );
 
-    return {
+    return await attachFallbackPlan({
       ...summary,
       score: rating.score5 ?? summary.score,
       scoreSource: rating.score5
@@ -905,10 +909,32 @@ export async function getStory(
       sourceUrl: item.source_url ?? `https://otruyen.cc/truyen-tranh/${slug}`,
       sourceName: item.source_name ? `${contentApiSourceName()} · ${item.source_name}` : contentApiSourceName(),
       rating,
-    };
+    }, options.db);
   } catch {
     return null;
   }
+}
+
+async function attachFallbackPlan(story: StoryDetailData, db?: D1Database): Promise<StoryDetailData> {
+  const primary = story.chapters.map((chapter) => ({
+    ...chapter,
+    source: "otruyen" as const,
+    domain: "otruyenapi.com",
+  }));
+  if (!db || story.medium === "novel") return { ...story, chapters: primary };
+  const fallback = await getFallbackChaptersForStory(db, story.id).catch(() => []);
+  if (!fallback.length) return { ...story, chapters: primary };
+  const chapters = mergeChapterPlans(primary, fallback);
+  const supplementalCount = chapters.filter((chapter) => chapter.source !== "otruyen").length;
+  return {
+    ...story,
+    chapters,
+    latestChapter: chapters[0]?.number ?? story.latestChapter,
+    latestChapterId: chapters[0]?.id ?? story.latestChapterId,
+    sourceName: supplementalCount
+      ? `OTruyen API + ${supplementalCount.toLocaleString("vi-VN")} chương dự phòng Cloudflare`
+      : story.sourceName,
+  };
 }
 
 export async function getChapterPages(chapterId: string): Promise<ChapterPageData | null> {

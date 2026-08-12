@@ -251,7 +251,21 @@ export async function runOTruyenIngest(db: D1Database, options: IngestOptions = 
       const externalUrl = `https://otruyen.cc/truyen-tranh/${item.slug}`;
       const provisionalScore = provisionalCatalogScore(item);
       statements.push(
-        db.prepare("INSERT INTO stories (id, slug, medium, canonical_title, synopsis, author, status, origin, content_rating, cover_url, latest_chapter, latest_chapter_label, latest_chapter_id, updated_at) VALUES (?, ?, 'comic', ?, '', NULL, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET slug = excluded.slug, canonical_title = excluded.canonical_title, origin = excluded.origin, status = excluded.status, content_rating = excluded.content_rating, cover_url = excluded.cover_url, latest_chapter = excluded.latest_chapter, latest_chapter_label = excluded.latest_chapter_label, latest_chapter_id = excluded.latest_chapter_id, updated_at = excluded.updated_at").bind(item._id, item.slug, item.name, normalizedStatus(item.status), item.origin_name?.filter(Boolean).join(" · ") || null, contentRating, coverUrl, latestChapter(item), item.chaptersLatest?.[0]?.chapter_name ?? null, latestChapterId(item), item.updatedAt ?? new Date().toISOString()),
+        db.prepare(`
+          INSERT INTO stories (id, slug, medium, canonical_title, synopsis, author, status, origin, content_rating, cover_url, latest_chapter, latest_chapter_label, latest_chapter_id, updated_at)
+          VALUES (?, ?, 'comic', ?, '', NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            slug = excluded.slug,
+            canonical_title = excluded.canonical_title,
+            origin = excluded.origin,
+            status = excluded.status,
+            content_rating = excluded.content_rating,
+            cover_url = excluded.cover_url,
+            latest_chapter = CASE WHEN stories.latest_chapter IS NULL OR stories.latest_chapter <= excluded.latest_chapter THEN excluded.latest_chapter ELSE stories.latest_chapter END,
+            latest_chapter_label = CASE WHEN stories.latest_chapter IS NULL OR stories.latest_chapter <= excluded.latest_chapter THEN excluded.latest_chapter_label ELSE stories.latest_chapter_label END,
+            latest_chapter_id = CASE WHEN stories.latest_chapter IS NULL OR stories.latest_chapter <= excluded.latest_chapter THEN excluded.latest_chapter_id ELSE stories.latest_chapter_id END,
+            updated_at = excluded.updated_at
+        `).bind(item._id, item.slug, item.name, normalizedStatus(item.status), item.origin_name?.filter(Boolean).join(" · ") || null, contentRating, coverUrl, latestChapter(item), item.chaptersLatest?.[0]?.chapter_name ?? null, latestChapterId(item), item.updatedAt ?? new Date().toISOString()),
         db.prepare("INSERT INTO source_items (id, source_id, story_id, external_id, external_url, etag, source_updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?) ON CONFLICT(source_id, external_id) DO UPDATE SET external_url = excluded.external_url, source_updated_at = excluded.source_updated_at").bind(`otruyen_${item._id}`, SOURCE_ID, item._id, item._id, externalUrl, item.updatedAt ?? null),
         db.prepare("INSERT INTO story_scores (story_id, score_5, confidence, source_count, vote_count, computed_at) VALUES (?, ?, 'insufficient', 0, 0, ?) ON CONFLICT(story_id) DO UPDATE SET score_5 = excluded.score_5, computed_at = excluded.computed_at WHERE story_scores.source_count = 0").bind(item._id, provisionalScore, item.updatedAt ?? new Date().toISOString()),
       );

@@ -5,7 +5,7 @@ import { ReaderClient } from "../../../components/ReaderClient";
 import { getChapterPages, getStory } from "../../../lib/catalog";
 import { persistOTruyenStorySnapshot } from "../../../lib/d1-story-sync";
 import { getReaderAccess, type ReaderAccessRuntime } from "../../../lib/reader-access";
-import { isMangaApiCatalogProvider } from "../../../lib/sources/manga-api";
+import { getFallbackChapterTarget } from "../../../lib/sources/fallback-chapters";
 
 export const metadata: Metadata = { title: "Đang đọc", robots: { index: false, follow: false } };
 
@@ -20,15 +20,20 @@ export default async function ReadPage({ params, searchParams }: { params: Promi
     const from = `/read/${encodeURIComponent(chapterId)}${storySlug ? `?story=${encodeURIComponent(storySlug)}` : ""}`;
     redirect(`/login?from=${encodeURIComponent(from)}`);
   }
+  const runtime = env as unknown as { DB?: D1Database };
+  if (chapterId.startsWith("fb_")) {
+    const fallback = runtime.DB ? await getFallbackChapterTarget(runtime.DB, chapterId) : null;
+    if (!fallback) notFound();
+    redirect(fallback.url);
+  }
   const [chapter, story] = await Promise.all([
     getChapterPages(chapterId),
     /^[a-z0-9-]{1,160}$/.test(storySlug)
-      ? getStory(storySlug, { includeExternalRating: false })
+      ? getStory(storySlug, { includeExternalRating: false, db: runtime.DB })
       : Promise.resolve(null),
   ]);
   if (!chapter) notFound();
-  const runtime = env as unknown as { DB?: D1Database };
-  if (runtime.DB && !isMangaApiCatalogProvider() && story?.sourceName === "OTruyen API") {
+  if (runtime.DB && story && !storySlug.startsWith("mangadex-")) {
     await persistOTruyenStorySnapshot(runtime.DB, story).catch(() => false);
   }
   let imageOrigin = "";

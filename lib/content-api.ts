@@ -76,11 +76,10 @@ export function contentApiHeaders(targetUrl?: string) {
 }
 
 export function comicApiCandidates(path: string) {
-  const { baseUrl, strict } = getContentApiConfiguration();
   const normalizedPath = `/${path.replace(/^\/+/, "")}`;
-  const configured = baseUrl ? [`${baseUrl}${normalizedPath}`] : [];
-  if (!baseUrl || !strict) configured.push(`${LEGACY_COMIC_API}${normalizedPath}`);
-  return [...new Set(configured)];
+  // Comics always use OTruyen directly. MUC_CONTENT_API_URL remains available
+  // to the novel aggregator but can no longer become a comic single point of failure.
+  return [`${LEGACY_COMIC_API}${normalizedPath}`];
 }
 
 export function contentApiUrl(path: string) {
@@ -90,5 +89,5 @@ export function contentApiUrl(path: string) {
 }
 
 export function contentApiSourceName() {
-  return getContentApiConfiguration().baseUrl ? "Mực Multi-Source API" : "OTruyen API";
+  return "OTruyen API";
 }

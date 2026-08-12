@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getChapterPages } from "../../../../lib/catalog";
 import { getReaderAccess, type ReaderAccessRuntime } from "../../../../lib/reader-access";
 import { MangaApiError } from "../../../../lib/sources/manga-api";
+import { getFallbackChapterTarget } from "../../../../lib/sources/fallback-chapters";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ chapterId: string }> }) {
   const access = await getReaderAccess(env as unknown as ReaderAccessRuntime);
@@ -13,6 +14,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cha
     );
   }
   const { chapterId } = await params;
+  if (chapterId.startsWith("fb_")) {
+    const runtime = env as unknown as { DB?: D1Database };
+    const fallback = runtime.DB ? await getFallbackChapterTarget(runtime.DB, chapterId) : null;
+    if (!fallback) return NextResponse.json({ error: "Chương dự phòng không khả dụng", code: "CHAPTER_NOT_FOUND", details: null }, { status: 404 });
+    return NextResponse.json({
+      error: "Chương này được đọc tại trang nguồn",
+      code: "EXTERNAL_CHAPTER",
+      externalUrl: fallback.url,
+      source: fallback.source,
+    }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
+  }
   let chapter;
   try {
     chapter = await getChapterPages(chapterId);

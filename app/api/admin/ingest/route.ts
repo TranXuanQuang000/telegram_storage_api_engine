@@ -3,18 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { sameSecret } from "../../../../lib/admin-auth";
 import { runOTruyenIngest } from "../../../../lib/sources/otruyen";
-import { isMangaApiCatalogProvider } from "../../../../lib/sources/manga-api";
+import { crawlFallbackCatalog, refreshFallbackManifests, runFallbackCrawlerCycle } from "../../../../lib/sources/fallback-chapters";
 
-const bodySchema = z.object({ source: z.literal("otruyen"), mode: z.enum(["incremental", "refresh"]), cursor: z.string().max(240).nullable().optional() }).strict();
+const bodySchema = z.object({
+  source: z.enum(["otruyen", "nettruyen", "truyenqq", "hybrid"]),
+  mode: z.enum(["incremental", "refresh"]),
+  cursor: z.string().max(240).nullable().optional(),
+}).strict();
 
 export async function POST(request: NextRequest) {
-  if (isMangaApiCatalogProvider()) {
-    return NextResponse.json({
-      error: "Catalog do manga-api quản lý; ingestion OTruyen trong web đã tắt",
-      code: "INGEST_MANAGED_BY_MANGA_API",
-      details: null,
-    }, { status: 409, headers: { "Cache-Control": "no-store" } });
-  }
   const runtime = env as unknown as { DB?: D1Database; INGEST_TOKEN?: string };
   if (!runtime.DB || !runtime.INGEST_TOKEN) return NextResponse.json({ error: "Ingestion chưa được cấu hình trên hosting", code: "INGEST_NOT_CONFIGURED", details: null }, { status: 503 });
   const supplied = request.headers.get("x-ingest-token") ?? "";
@@ -25,6 +22,17 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: "Cấu hình ingestion không hợp lệ", code: "INVALID_REQUEST", details: null }, { status: 400 });
 
   try {
+    if (parsed.data.source === "hybrid") {
+      const result = await runFallbackCrawlerCycle(runtime.DB);
+      return NextResponse.json({ status: "accepted", result }, { status: 202, headers: { "Cache-Control": "no-store" } });
+    }
+    if (parsed.data.source === "nettruyen" || parsed.data.source === "truyenqq") {
+      const [catalog, manifests] = await Promise.all([
+        crawlFallbackCatalog(runtime.DB, parsed.data.source, parsed.data.mode === "refresh" ? 1 : 4),
+        refreshFallbackManifests(runtime.DB, parsed.data.source, parsed.data.mode === "refresh" ? 4 : 10),
+      ]);
+      return NextResponse.json({ status: "accepted", result: { catalog, manifests } }, { status: 202, headers: { "Cache-Control": "no-store" } });
+    }
     const result = await runOTruyenIngest(runtime.DB, {
       mode: parsed.data.mode,
       cursor: parsed.data.cursor,

@@ -2,33 +2,20 @@
 
 Mực là web app đọc manga, manhwa và manhua theo hướng “phòng đọc”: catalog có nguồn, tìm kiếm sâu, lịch sử, tủ truyện, tải chương offline và gợi ý AI bằng API key do người dùng tự cung cấp.
 
-## Chạy local với Manga API
+## Chạy local
 
 Yêu cầu Node.js `>=22.13.0`.
 
-Chạy backend trước ở terminal thứ nhất:
+Web truyện tranh không cần Raspberry Pi, MongoDB hay service Manga API. OTruyen
+là catalog/nội dung chính; Cloudflare Worker lập chapter plan dự phòng từ link
+NetTruyen và TruyenQQ rồi lưu trong D1.
+
+Chạy web:
 
 ```powershell
-cd "D:\Code\Project\manga-api"
+cd "D:\Code\Project\App Truyen\novel-sync-final"
 npm ci
-npm run seed
-npm start
-```
-
-Nếu Redis/Telegram cache được cấu hình, chạy thêm worker trong một terminal riêng:
-
-```powershell
-cd "D:\Code\Project\manga-api"
-npm run worker
-```
-
-Chạy web ở terminal tiếp theo:
-
-```powershell
-cd "D:\Code\Project\App Truyen Nova"
-npm ci
-$env:MANGA_API_BASE_URL="http://localhost:3100"
-$env:CATALOG_PROVIDER="manga-api"
+npx wrangler d1 migrations apply DB --local --config wrangler.json
 npm run dev
 ```
 
@@ -89,9 +76,9 @@ python -m pytest -q
 
 ## Dữ liệu và quyền sử dụng
 
-- Catalog, detail, chapter cache và signed image URL đi qua `manga-api`; web không gọi trực tiếp OTruyen, NetTruyen hoặc TruyenQQ khi `CATALOG_PROVIDER=manga-api`.
+- Catalog, detail và chương đã có dùng OTruyen. NetTruyen/TruyenQQ chỉ cung cấp link/path chương còn thiếu; cùng một số chương thì OTruyen luôn thắng.
 - Điểm 5 sao được đối chiếu theo tên gốc, tên thay thế và tên tiếng Việt từ AniList, Kitsu và dữ liệu MyAnimeList đọc qua Jikan; chỉ hiện nhãn “tổng hợp” khi có ít nhất hai nguồn khớp tên. Nếu chưa tìm thấy điểm công khai, bìa vẫn hiện `~ Điểm Mực tạm tính` dựa trên độ mới và độ đầy đủ metadata để không bị trống, nhưng luôn phân biệt rõ với điểm cộng đồng.
-- Reader chỉ dùng `proxyUrl`/`image_file` đã ký do Manga API trả về, không render `originalUrl`. Tải offline dùng Cache Storage trên thiết bị, còn manifest nằm trong IndexedDB.
+- Chapter plan dự phòng nằm trong D1 và chỉ chứa metadata/link đã qua allowlist. Reader chuyển đến trang nguồn cho chương dự phòng; không có open proxy và không sao chép hàng loạt ảnh.
 - Trước khi thêm connector mới, cần kiểm tra điều khoản, robots/rate limit và quyền phân phối của nguồn. Connector không được dùng để vượt paywall hoặc cơ chế bảo vệ truy cập.
 
 ## Hosting và D1
@@ -100,14 +87,12 @@ python -m pytest -q
 
 Biến môi trường cần cấu hình trên hosting:
 
-- `MANGA_API_BASE_URL`: origin server-side của Manga API.
-- `CATALOG_PROVIDER=manga-api`: bật adapter mới và vô hiệu hóa OTruyen ingestion trong web.
-- `INGEST_TOKEN`: secret cho ingestion legacy/rating; không dùng để gọi Manga API.
+- `INGEST_TOKEN`: secret để chạy ingestion/rating thủ công.
 - `NEXT_PUBLIC_SITE_URL`: origin công khai dùng cho metadata, ví dụ `https://muc.example.com`.
 
 API quản trị:
 
-- `POST /api/admin/ingest` chỉ còn cho rollback legacy; route trả `409` khi Manga API đang quản lý catalog.
+- `POST /api/admin/ingest` nhận `source=otruyen|nettruyen|truyenqq|hybrid` và chạy crawler D1 độc lập.
 - `POST /api/admin/ratings` với header `X-Ingest-Token` và body `{"limit":6}`.
 
 Cloudflare scheduled handler chạy catalog ingestion rồi làm giàu rating theo lô nhỏ. Lịch cron cần được bật trong cấu hình môi trường triển khai.

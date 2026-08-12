@@ -149,7 +149,10 @@ export function getCatalogProvider() {
 }
 
 export function isMangaApiCatalogProvider() {
-  return getCatalogProvider() === "manga-api";
+  // The Raspberry Pi service is no longer part of the serving path. The
+  // adapter remains available for rollback tests, but production is pinned to
+  // OTruyen plus Cloudflare D1 fallback chapter plans.
+  return false;
 }
 
 export function getMangaApiBaseUrl() {

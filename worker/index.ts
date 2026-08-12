@@ -3,6 +3,7 @@ import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } fr
 import handler from "vinext/server/app-router-entry";
 import { refreshTrackedOTruyenStories, runOTruyenIngest } from "../lib/sources/otruyen";
 import { runRatingEnrichment } from "../lib/sources/ratings";
+import { refreshFallbackStoryPlan, runFallbackCrawlerCycle } from "../lib/sources/fallback-chapters";
 
 interface Env {
   ASSETS: Fetcher;
@@ -22,6 +23,17 @@ interface ExecutionContext {
 }
 
 let catalogRefreshInFlight: Promise<void> | null = null;
+const storyPlanRefreshes = new Map<string, Promise<unknown>>();
+
+function refreshStoryPlanInBackground(db: D1Database, slug: string) {
+  const existing = storyPlanRefreshes.get(slug);
+  if (existing) return existing;
+  const task = refreshFallbackStoryPlan(db, slug)
+    .catch((error) => console.warn(`Fallback story plan refresh failed for ${slug}`, error))
+    .finally(() => storyPlanRefreshes.delete(slug));
+  storyPlanRefreshes.set(slug, task);
+  return task;
+}
 
 function refreshCatalogHeadIfStale(db: D1Database) {
   if (catalogRefreshInFlight) return catalogRefreshInFlight;
@@ -58,6 +70,11 @@ const worker = {
     ) {
       ctx.waitUntil(refreshCatalogHeadIfStale(env.DB));
     }
+    if (env.DB && request.method === "GET") {
+      const storyMatch = url.pathname.match(/^\/story\/([a-z0-9-]{1,160})\/?$/)
+        ?? url.pathname.match(/^\/api\/stories\/([a-z0-9-]{1,160})\/?$/);
+      if (storyMatch?.[1]) ctx.waitUntil(refreshStoryPlanInBackground(env.DB, storyMatch[1]));
+    }
 
     if (env.ASSETS && (request.method === "GET" || request.method === "HEAD") && !url.pathname.startsWith("/api/")) {
       const assetRes = await env.ASSETS.fetch(request);
@@ -86,10 +103,15 @@ const worker = {
     ctx.waitUntil((async () => {
       // Refresh the volatile head every hour, while a separate cursor keeps
       // advancing through the complete source catalog.
-      await runOTruyenIngest(env.DB, { mode: "refresh", pagesPerRun: 6 });
-      await runOTruyenIngest(env.DB, { mode: "incremental", pagesPerRun: 12 });
-      await refreshTrackedOTruyenStories(env.DB, 24);
-      await runRatingEnrichment(env.DB, 12);
+      await Promise.allSettled([
+        runOTruyenIngest(env.DB, { mode: "refresh", pagesPerRun: 6 }),
+        runOTruyenIngest(env.DB, { mode: "incremental", pagesPerRun: 12 }),
+      ]);
+      await Promise.allSettled([
+        refreshTrackedOTruyenStories(env.DB, 24),
+        runFallbackCrawlerCycle(env.DB),
+        runRatingEnrichment(env.DB, 12),
+      ]);
     })());
   },
 };
