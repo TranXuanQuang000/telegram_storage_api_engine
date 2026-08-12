@@ -1,0 +1,31 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "muctruyen-crawler",
+  "main": "../../dist/server/index.js",
+  "no_bundle": true,
+  "compatibility_date": "2026-07-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "rules": [
+    {
+      "type": "ESModule",
+      "globs": ["**/*.js", "**/*.mjs"]
+    }
+  ],
+  "triggers": {
+    "crons": ["7 * * * *"]
+  },
+  "vars": {
+    "MUC_CONTENT_API_URL": "https://telegram-storage-api-engine.onrender.com/v1/api",
+    "MUC_CONTENT_API_STRICT": "false",
+    "MUC_NOVEL_API_SOURCES": "hako,truyenfull,metruyenchu,tangthuvien,wikidich,gutendex",
+    "MUC_NOVEL_API_SCAN_PAGES": "3"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "site-creator-d1",
+      "database_id": "597c4b6d-65d2-45d4-91f2-784523e85bd6",
+      "migrations_dir": "../../drizzle"
+    }
+  ]
+}

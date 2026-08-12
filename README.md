@@ -95,7 +95,7 @@ API quản trị:
 - `POST /api/admin/ingest` nhận `source=otruyen|nettruyen|truyenqq|hybrid` và chạy crawler D1 độc lập.
 - `POST /api/admin/ratings` với header `X-Ingest-Token` và body `{"limit":6}`.
 
-Cloudflare scheduled handler chạy catalog ingestion rồi làm giàu rating theo lô nhỏ. Lịch cron cần được bật trong cấu hình môi trường triển khai.
+Cloudflare scheduled handler chạy catalog ingestion, chapter-plan ingestion và làm giàu rating theo lô nhỏ. Lịch cron production nằm trong `deploy/cloudflare/wrangler-crawler.json`.
 
 ## AI BYOK
 
@@ -112,10 +112,11 @@ Mực hỗ trợ OpenAI, Anthropic và Gemini. Key chỉ nằm trong `sessionSto
 
 - `app/`: giao diện và API routes.
 - `components/`: reader, discovery, tủ truyện, tải offline và AI settings.
-- `lib/sources/manga-api.ts`: adapter duy nhất cho catalog, search, genre, detail, chapter và signed image URL.
+- `lib/sources/otruyen.ts`: nguồn chính cho catalog, detail và chapter có thể đọc trực tiếp.
+- `lib/sources/fallback-chapters.ts`: crawler chapter-plan NetTruyen/TruyenQQ, merge theo số chương và kiểm tra allowlist URL.
+- `lib/sources/manga-api.ts`: adapter cũ chỉ giữ lại cho rollback/test; production không gọi adapter này.
 - `lib/sources/novel-api.ts`: adapter truyện chữ có opaque ID và provenance theo từng chapter.
 - `backend_api_engine/`: source selector, chapter merge/gap filling, HTML cleaner và connector truyện chữ.
-- `lib/sources/otruyen.ts`: adapter legacy chỉ giữ lại để rollback.
 - `lib/ratings.ts`: công thức Bayesian, freshness và confidence.
 - `lib/offline-store.ts`: IndexedDB, Cache Storage, quota và progress queue.
 - `db/`: schema D1 và migration.
@@ -123,25 +124,34 @@ Mực hỗ trợ OpenAI, Anthropic và Gemini. Key chỉ nằm trong `sessionSto
 
 ## Dashboard vận hành
 
-Trang `/admin/cyber-nexus` hiển thị dữ liệu thật từ Manga API và Novel API:
+Trang `/admin/cyber-nexus` hiển thị dữ liệu thật từ D1 và Novel API:
 
-- tổng catalog, manifest chapter, chapter cache và hàng đợi;
-- cursor, lần chạy, số bản ghi nhập/cập nhật và lỗi gần nhất của từng nguồn manga;
-- trạng thái backend, MongoDB, snapshot truyện chữ và circuit của từng nguồn novel.
+- tổng catalog, chapter OTruyen, chapter-plan dự phòng và hàng đợi;
+- cursor, lần chạy, số bản ghi nhập/cập nhật và lỗi gần nhất của OTruyen, NetTruyen và TruyenQQ;
+- snapshot truyện chữ và circuit của từng nguồn novel.
 
-Hai secret bắt buộc phải được cấu hình trên Cloudflare, không ghi vào `wrangler.json`:
+Secret dashboard được cấu hình trên Cloudflare, không ghi vào `wrangler.json`:
 
 ```powershell
 npx wrangler pages secret put ADMIN_DASHBOARD_TOKEN --project-name muctruyen
-npx wrangler pages secret put MANGA_API_ADMIN_TOKEN --project-name muctruyen
 ```
 
-`ADMIN_DASHBOARD_TOKEN` là mã riêng để mở dashboard. `MANGA_API_ADMIN_TOKEN` phải
-khớp `ADMIN_TOKEN` của service `muc-manga-api` trên Render. Route
-`/api/admin/dashboard` giữ credential backend ở server; trình duyệt không nhận được
-credential này.
+`ADMIN_DASHBOARD_TOKEN` là mã riêng để mở dashboard. Route `/api/admin/dashboard`
+đọc telemetry trực tiếp từ D1; trình duyệt không nhận được credential này.
 
-Script PowerShell/Python local vẫn dừng khi Windows tắt hoặc sleep. Catalog truyện
-chữ production được cập nhật theo lô bởi `.github/workflows/sync-novel-catalog.yml`
-mỗi bốn giờ; checkpoint mới được commit sẽ kích hoạt Render auto-deploy. Vì vậy
-laptop không còn là thành phần bắt buộc để kho production tiếp tục lớn dần.
+Catalog manga và chapter-plan chạy trên Cloudflare Worker Cron. Catalog truyện chữ
+production vẫn có workflow riêng tại `.github/workflows/sync-novel-catalog.yml`.
+Pi, VM và laptop đều không nằm trong đường phục vụ hoặc lịch cập nhật manga.
+
+### Crawler Cloudflare-only (không cần Raspberry Pi)
+
+Website lấy catalog và chapter OTruyen trực tiếp, sau đó dùng chapter plan trong D1 để bù các chapter còn thiếu từ TruyenQQ/NetTruyen. Worker cron dùng cùng D1 với Pages và chạy theo giờ, nên không cần Raspberry Pi, VM hay máy cá nhân luôn bật.
+
+Sau khi build, triển khai crawler độc lập bằng:
+
+```bash
+npm run build
+npx wrangler deploy --config deploy/cloudflare/wrangler-crawler.json
+```
+
+Cron được khai báo tại `deploy/cloudflare/wrangler-crawler.json`; lượt xem trang truyện vẫn kích hoạt một lần refresh nền ưu tiên cho chính truyện đó.
